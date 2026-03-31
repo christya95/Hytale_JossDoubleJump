@@ -1,0 +1,13 @@
+{
+  "horizontalBoost": 10.0,
+  "verticalBoost": 15.0,
+  "cooldownMs": 0,
+  "staminaCost": 1.5,
+  "usePercentageStamina": false,
+  "staminaLossPercentage": 10.0,
+  "infiniteDoubleJump": false,
+  "maxJumps": 1,
+  "useAbility2": false,
+  "useAbility3": false,
+  "useJumpKey": true
+}

@@ -1,0 +1,13 @@
+# Local JDK / decompiler bundles (too large for git; install your own JDK 25 for builds)
+tools/
+
+# Build scratch (keep build/assets for manifests + defaults)
+build/classes/
+build/patch-classes/
+build/unpack-original/
+build/unpack*/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.log

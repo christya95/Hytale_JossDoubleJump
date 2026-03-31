@@ -1,0 +1,11 @@
+JossDoubleJump — single folder for this mod
+
+  dist\JossDoubleJump.jar     — ship this (run sync script to copy into server mods\)
+  runtime-config\             — canonical double_jump_config.json (sync copies to mods\JossDoubleJump\)
+  build\assets\               — manifest + defaults used when rebuilding the jar
+  sources\                    — editable Java (narwhals + Joss patches). Prefer incremental compile: javac changed files with classpath HytaleServer.jar + dist\JossDoubleJump.jar, then jar uf into the jar (full tree compile may fail on CFR artifacts).
+  tools\                      — JDK 25 + CFR for local rebuilds (no longer under repo .tools)
+  scripts\sync-to-mods.ps1    — copies dist + runtime-config into PebbleHotServerRoot\mods\
+  scripts\build.ps1           — optional full rebuild from sources (fragile); prefer patching dist\JossDoubleJump.jar as above
+
+The running server still reads config from mods\JossDoubleJump\ (path inside the plugin). After editing runtime-config\, run sync-to-mods.ps1 before starting the server.
