@@ -14,6 +14,9 @@ build/patch-classes/
 build/unpack-original/
 build/unpack*/
 
+# GitHub CLI config when using scripts/push-github.ps1 (GH_CONFIG_DIR=.gh-config)
+.gh-config/
+
 # Editor / OS noise
 .DS_Store
 Thumbs.db
