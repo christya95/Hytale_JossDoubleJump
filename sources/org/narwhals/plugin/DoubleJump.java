@@ -24,7 +24,7 @@ public class DoubleJump extends JavaPlugin {
     private static String version;
 
     static {
-        version = "by narwhals";
+        version = "JossDoubleJump";
     }
 
     public static ConfigLoader getConfigLoader() {

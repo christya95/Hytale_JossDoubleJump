@@ -1,5 +1,5 @@
-JossDoubleJump — players & quick server setup
-==============================================
+JossDoubleJump (by Joss) — players & quick server setup
+=======================================================
 
 1. Download JossDoubleJump.jar
    From this repo: open the "dist" folder and download JossDoubleJump.jar

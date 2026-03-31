@@ -24,4 +24,4 @@ Copy the sample from **`runtime-config/double_jump_config.json`** into your serv
 
 ---
 
-🦑 **Full source + build scripts?** Use the repo root — this folder is mainly a signpost so “downloads” aren’t lost in the trees.
+🎮 **JossDoubleJump** by **Joss** — **full source + build scripts** live at the repo root; this folder is just a signpost so “downloads” aren’t lost in the trees.

@@ -2,7 +2,7 @@
 
 *Because one jump is never enough.* 🦘✨
 
-**JossDoubleJump** is a fork of narwhals’ classic **Double Jump** server mod, tuned so you can **pop a second jump with the jump key in mid-air**—no stealing **Ability 2 / 3** from your weapons and tools. Swords, pickaxes, bows, bare hands… if you’re airborne and you press jump again, the server can fire a stylish double-jump (stamina allowing).
+**JossDoubleJump** is **Joss**’s fork of narwhals’ classic **Double Jump** server mod—built so you can **pop a second jump with the jump key in mid-air** without hogging **Ability 2 / 3** on weapons and tools. Swords, pickaxes, bows, bare hands… if you’re airborne and you press jump again, the server can fire a stylish double-jump (stamina allowing).
 
 ---
 
@@ -63,7 +63,7 @@ Respect upstream and Hytale modding terms when you ship or modify. 🤝
 
 Go launch off cliffs responsibly, speedrun your castle walls, and remember: **the floor is optional.** 🪐
 
-*— JossDoubleJump crew*
+*— Joss · JossDoubleJump*
 
 ---
 

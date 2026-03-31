@@ -1,4 +1,4 @@
-JossDoubleJump — single folder for this mod
+JossDoubleJump — by Joss; single folder for this mod
 
   dist\JossDoubleJump.jar     — ship this (run sync script to copy into server mods\)
   runtime-config\             — canonical double_jump_config.json (sync copies to mods\JossDoubleJump\)
