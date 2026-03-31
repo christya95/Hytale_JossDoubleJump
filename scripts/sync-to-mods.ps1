@@ -1,12 +1,12 @@
 # Copies dist/JossDoubleJump.jar and runtime-config into <server root>/mods/
 # Optional: set PEBBLE_SERVER_ROOT to the folder that contains HytaleServer.jar and mods\
-# (use when JossDoubleJump lives under D:\...\workspace but the server stays elsewhere).
+# (when syncing into a server tree that is not this repo). If unset, copies into <repo>\mods\.
 # (paths are resolved from this script’s location; server cwd does not matter).
 $ErrorActionPreference = "Stop"
 $jossRoot = Split-Path $PSScriptRoot -Parent
 $serverRoot = $env:PEBBLE_SERVER_ROOT
 if ([string]::IsNullOrWhiteSpace($serverRoot)) {
-    $serverRoot = Split-Path $jossRoot -Parent
+    $serverRoot = $jossRoot
 }
 $distJar = Join-Path $jossRoot "dist\JossDoubleJump.jar"
 $cfgSrc = Join-Path $jossRoot "runtime-config\double_jump_config.json"

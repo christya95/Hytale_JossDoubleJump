@@ -44,11 +44,12 @@ Canonical sample lives in **`runtime-config/double_jump_config.json`**.
 
 ## 🧑‍💻 Building & patching (developers)
 
-- **Incremental patch** (usual workflow): JDK **25**, compile changed classes against `HytaleServer.jar` + existing `JossDoubleJump.jar`, then `jar uf` into `dist/JossDoubleJump.jar`. See **`WORKSPACE.txt`**.
-- **`scripts/build.ps1`** — full rebuild path (needs upstream stub jar + full compile; heavier).
-- **`scripts/sync-to-mods.ps1`** — copies `dist/` + `runtime-config/` into a sibling **`PebbleHotServerRoot`** layout for local testing.
+- **`scripts/repack-jar.ps1`** — refreshes **`dist/JossDoubleJump.jar`** from a template JAR (this repo’s `mods\`, **`PebbleHotServerRoot\mods`**, or an existing `dist\` file) plus **`build/assets`**. No compile; use this for a clean ship build when sources are CFR snapshots.
+- **Incremental patch** (small code changes): JDK **25**, compile changed classes against `HytaleServer.jar` + existing `JossDoubleJump.jar`, then `jar uf` into `dist/JossDoubleJump.jar`. See **`WORKSPACE.txt`**.
+- **`scripts/build.ps1`** — full compile of all `sources\` (often breaks until decompiled stubs match your server API); on success, merges classes and rebuilds the jar.
+- **`scripts/sync-to-mods.ps1`** — copies `dist/` + `runtime-config/` into **`mods/`** in this repo (or set **`PEBBLE_SERVER_ROOT`** to your server root).
 
-Large **`tools/`** (JDK, CFR) are **gitignored**—install your own toolchain or unpack locally.
+Built **`dist/*.jar`** and local **`mods/`** drops are **gitignored**. Install JDK **25** under **`tools/jdk25/`** locally for the scripts (folder is gitignored).
 
 ---
 

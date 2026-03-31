@@ -1,8 +1,15 @@
 # Local JDK / decompiler bundles (too large for git; install your own JDK 25 for builds)
 tools/
 
+# Build outputs (build from source; attach to GitHub Releases if you ship binaries)
+dist/
+
+# Local drops / sync targets (canonical files: runtime-config/, scripts/sync-to-mods.ps1)
+mods/
+
 # Build scratch (keep build/assets for manifests + defaults)
 build/classes/
+build/compile-out/
 build/patch-classes/
 build/unpack-original/
 build/unpack*/
