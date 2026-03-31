@@ -2,7 +2,10 @@
 # Requires: HytaleServer.jar and the original "Double Jump-0.1.5.jar" at server root for compile classpath.
 $ErrorActionPreference = "Stop"
 $jossRoot = Split-Path $PSScriptRoot -Parent
-$serverRoot = Split-Path $jossRoot -Parent
+$serverRoot = $env:PEBBLE_SERVER_ROOT
+if ([string]::IsNullOrWhiteSpace($serverRoot)) {
+    $serverRoot = Split-Path $jossRoot -Parent
+}
 $sourcesDir = Join-Path $jossRoot "sources"
 $outClasses = Join-Path $jossRoot "build\classes"
 $workDir = Join-Path $jossRoot "build\unpack-original"
