@@ -12,8 +12,16 @@ if ([string]::IsNullOrWhiteSpace($gh) -or -not (Test-Path $gh)) {
 if (-not (Test-Path $gh)) { throw "gh not found. Set GH_EXE to gh.exe or install GitHub CLI." }
 
 Write-Host "Using GH_CONFIG_DIR=$ghConfig (token/config stored here, not committed)"
-& $gh auth status 2>&1 | Out-Host
-if ($LASTEXITCODE -ne 0) {
+# gh prints "not logged in" to stderr; with $ErrorActionPreference Stop that becomes a terminating error unless we relax here.
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
+  & $gh auth status 2>&1 | ForEach-Object { Write-Host $_ }
+  $authExit = $LASTEXITCODE
+} finally {
+  $ErrorActionPreference = $prevEap
+}
+if ($authExit -ne 0) {
   Write-Host ""
   Write-Host "GitHub CLI is not logged in. Use the same GH_CONFIG_DIR as this script (under your repo on D:):"
   Write-Host "  `$env:GH_CONFIG_DIR = `"$ghConfig`""
