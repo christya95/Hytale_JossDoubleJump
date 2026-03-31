@@ -64,3 +64,17 @@ Respect upstream and Hytale modding terms when you ship or modify. 🤝
 Go launch off cliffs responsibly, speedrun your castle walls, and remember: **the floor is optional.** 🪐
 
 *— JossDoubleJump crew*
+
+---
+
+## 🌐 First-time publish to GitHub
+
+`GitHub CLI` isn’t required—create the repo in the browser, then:
+
+```bash
+cd "/path/to/JossDoubleJump"
+git remote add origin https://github.com/<YOUR_USER>/Hytale-JossDoubleJump.git
+git push -u origin main
+```
+
+**Tip:** After the first push, cut a **Release** and attach `dist/JossDoubleJump.jar` so players get a one-click download. The [`download/`](download/) folder + **`dist/`** stay the “grab the JAR” locations in-tree.
