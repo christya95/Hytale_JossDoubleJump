@@ -15,11 +15,11 @@ Write-Host "Using GH_CONFIG_DIR=$ghConfig (token/config stored here, not committ
 & $gh auth status 2>&1 | Out-Host
 if ($LASTEXITCODE -ne 0) {
   Write-Host ""
-  Write-Host "Log in once (browser):"
-  Write-Host "  & `"$gh`""
-  Write-Host "  auth login -h github.com -p https -w"
+  Write-Host "GitHub CLI is not logged in. Use the same GH_CONFIG_DIR as this script (under your repo on D:):"
+  Write-Host "  `$env:GH_CONFIG_DIR = `"$ghConfig`""
+  Write-Host ("  & `"$gh`" auth login -h github.com -p https -w")
   Write-Host ""
-  Write-Host "Or non-interactive PAT (repo scope), then re-run this script:"
+  Write-Host "Or with a PAT (repo scope), then re-run scripts\push-github.ps1:"
   Write-Host '  $env:GH_TOKEN = "<paste_token_here>"'
   Write-Host "  `$env:GH_TOKEN | & `"$gh`" auth login -h github.com --with-token"
   exit 1
