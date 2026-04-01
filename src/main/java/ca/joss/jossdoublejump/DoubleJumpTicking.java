@@ -33,6 +33,7 @@ import com.hypixel.hytale.server.core.universe.world.PlayerUtil;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -55,6 +56,8 @@ final class DoubleJumpTicking {
     private static final ConcurrentHashMap<Class<?>, Optional<Method>> RAW_JUMP_GETTERS = new ConcurrentHashMap<>();
     /** Per concrete PlayerInput class: boolean field that represents raw jump pressed, or empty if none. */
     private static final ConcurrentHashMap<Class<?>, Optional<Field>> RAW_JUMP_FIELDS = new ConcurrentHashMap<>();
+    /** Debug: ensure we only dump reflection candidates once per class. */
+    private static final ConcurrentHashMap<Class<?>, Boolean> RAW_JUMP_DEBUG_DUMPED = new ConcurrentHashMap<>();
 
     private static final String[] RAW_JUMP_METHOD_NAMES = {
         "isJumpPressed",
@@ -109,6 +112,70 @@ final class DoubleJumpTicking {
         } catch (IllegalAccessException ignored) {
             return null;
         }
+    }
+
+    private static void maybeDumpRawJumpCandidates(
+        @Nonnull Ref<EntityStore> ref,
+        @Nonnull CommandBuffer<EntityStore> cmd,
+        @Nonnull PlayerInput input
+    ) {
+        if (!DoubleJumpTrace.is(ref, cmd)) {
+            return;
+        }
+        Class<?> c = input.getClass();
+        if (RAW_JUMP_DEBUG_DUMPED.putIfAbsent(c, Boolean.TRUE) != null) {
+            return;
+        }
+
+        StringBuilder fields = new StringBuilder(256);
+        for (Class<?> k = c; k != null && k != Object.class; k = k.getSuperclass()) {
+            for (Field f : k.getDeclaredFields()) {
+                if (Modifier.isStatic(f.getModifiers())) {
+                    continue;
+                }
+                Class<?> t = f.getType();
+                String tn = t.getSimpleName();
+                String fn = f.getName();
+                // Only dump likely candidates to avoid huge logs.
+                boolean interesting =
+                    (t == boolean.class || t == Boolean.class)
+                        || tn.toLowerCase(Locale.ROOT).contains("movement")
+                        || fn.toLowerCase(Locale.ROOT).contains("jump");
+                if (!interesting) {
+                    continue;
+                }
+                if (fields.length() > 0) {
+                    fields.append(", ");
+                }
+                fields.append(fn).append(":").append(tn);
+            }
+        }
+
+        StringBuilder methods = new StringBuilder(256);
+        for (Method m : c.getMethods()) {
+            if (m.getParameterCount() != 0) {
+                continue;
+            }
+            Class<?> rt = m.getReturnType();
+            if (rt != boolean.class && rt != Boolean.class) {
+                continue;
+            }
+            String n = m.getName().toLowerCase(Locale.ROOT);
+            if (!n.contains("jump")) {
+                continue;
+            }
+            if (methods.length() > 0) {
+                methods.append(", ");
+            }
+            methods.append(m.getName());
+        }
+
+        DoubleJumpTrace.log(
+            ref,
+            cmd,
+            "rawProbe: no raw jump accessor found on " + c.getName()
+                + " | fields=[" + fields + "]"
+                + " | boolJumpMethods=[" + methods + "]");
     }
 
     @Nullable
@@ -501,6 +568,7 @@ final class DoubleJumpTicking {
                 signal = rawJump;
                 src = "raw";
             } else {
+                maybeDumpRawJumpCandidates(ref, cmd, input);
                 signal = dj.jumpHeldLastQueue || st.jumping;
                 src = "fallback";
             }
