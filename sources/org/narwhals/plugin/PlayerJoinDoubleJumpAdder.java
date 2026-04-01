@@ -21,7 +21,6 @@ package org.narwhals.plugin;
 
 import com.hypixel.hytale.component.AddReason;
 import com.hypixel.hytale.component.CommandBuffer;
-import com.hypixel.hytale.component.Component;
 import com.hypixel.hytale.component.ComponentType;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.RemoveReason;
@@ -51,7 +50,7 @@ extends RefSystem<EntityStore> {
 
     public void onEntityAdded(@Nonnull Ref<EntityStore> ref, @Nonnull AddReason addReason, @Nonnull Store<EntityStore> store, @Nonnull CommandBuffer<EntityStore> commandBuffer) {
         if (commandBuffer.getComponent(ref, this.doubleJumpComponentType) == null) {
-            commandBuffer.addComponent(ref, this.doubleJumpComponentType, (Component)new DoubleJumpComponent());
+            commandBuffer.addComponent(ref, this.doubleJumpComponentType, new DoubleJumpComponent());
             ((HytaleLogger.Api)LOGGER.atFine()).log("Added DoubleJumpComponent to player");
         } else {
             ((HytaleLogger.Api)LOGGER.atFine()).log("Resetting state for world transfer");
@@ -60,6 +59,8 @@ extends RefSystem<EntityStore> {
                 doubleJumpComponent.jumpCount = 0;
                 doubleJumpComponent.lastDoubleJumpTimeMs = 0L;
                 doubleJumpComponent.prevJumping = false;
+                doubleJumpComponent.phase = DoubleJumpPhase.GROUNDED;
+                doubleJumpComponent.airJumpPressPending = false;
             }
         }
     }

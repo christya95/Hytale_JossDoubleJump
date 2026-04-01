@@ -54,6 +54,7 @@ public class DoubleJump extends JavaPlugin {
         this.getCodecRegistry(Interaction.CODEC).register("Double_Jump", DoubleJumpInteraction.class, DoubleJumpInteraction.CODEC);
         ((HytaleLogger.Api) LOGGER.atInfo()).log("Interaction registered (Double_Jump)");
         reg.registerSystem((ISystem) new PlayerJoinDoubleJumpAdder(doubleJumpComponentType));
+        reg.registerSystem((ISystem) new DoubleJumpQueueScannerSystem(doubleJumpComponentType));
         reg.registerSystem((ISystem) new DoubleJumpSystem(doubleJumpComponentType));
         this.getCommandRegistry().registerCommand((AbstractCommand) new DoubleJumpModCommand());
         this.getCommandRegistry().registerCommand((AbstractCommand) new DoubleJumpSettingsCommand());

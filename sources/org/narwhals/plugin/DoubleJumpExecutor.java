@@ -72,6 +72,9 @@ public final class DoubleJumpExecutor {
 
         dj.jumpCount++;
         dj.lastDoubleJumpTimeMs = nowMs;
+        if (!config.infiniteDoubleJump && dj.jumpCount >= config.maxJumps) {
+            dj.phase = DoubleJumpPhase.AIR_SPENT;
+        }
         playRoll(ref, commandBuffer);
         return true;
     }

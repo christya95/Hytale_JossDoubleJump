@@ -9,6 +9,7 @@ mods/
 
 # Build scratch (keep build/assets for manifests + defaults)
 build/classes/
+build/classes-patch/
 build/compile-out/
 build/patch-classes/
 build/unpack-original/
