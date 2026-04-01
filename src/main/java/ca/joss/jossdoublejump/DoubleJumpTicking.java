@@ -68,7 +68,11 @@ final class DoubleJumpTicking {
         "jumpDown",
         "isJumpHeld",
         "getJumpHeld",
-        "jumpHeld"
+        "jumpHeld",
+        // Some implementations just expose “jumping”.
+        "isJumping",
+        "getJumping",
+        "jumping"
     };
 
     private DoubleJumpTicking() {}
@@ -202,8 +206,13 @@ final class DoubleJumpTicking {
 
     @Nullable
     private static Field findRawJumpField(Class<?> start) {
+        Field best = null;
+        int bestScore = -1;
         for (Class<?> c = start; c != null && c != Object.class; c = c.getSuperclass()) {
             for (Field f : c.getDeclaredFields()) {
+                if (Modifier.isStatic(f.getModifiers())) {
+                    continue;
+                }
                 Class<?> t = f.getType();
                 if (t != boolean.class && t != Boolean.class) {
                     continue;
@@ -212,14 +221,27 @@ final class DoubleJumpTicking {
                 if (!n.contains("jump")) {
                     continue;
                 }
-                if (!(n.contains("press") || n.contains("down") || n.contains("held"))) {
-                    continue;
+                // Prefer more explicit names, but accept any jump boolean if it's all we have.
+                int score = 0;
+                if (n.contains("press") || n.contains("down") || n.contains("held")) {
+                    score += 3;
                 }
-                f.setAccessible(true);
-                return f;
+                if (n.contains("jumping")) {
+                    score += 2;
+                }
+                if (n.contains("key") || n.contains("input")) {
+                    score += 1;
+                }
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = f;
+                }
             }
         }
-        return null;
+        if (best != null) {
+            best.setAccessible(true);
+        }
+        return best;
     }
 
     @Nullable
