@@ -1,6 +1,7 @@
 {
   "horizontalBoost": 10.0,
   "verticalBoost": 15.0,
+  "initialJumpBoostY": 1.0,
   "cooldownMs": 0,
   "staminaCost": 1.5,
   "usePercentageStamina": false,

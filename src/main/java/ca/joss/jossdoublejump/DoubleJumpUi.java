@@ -49,7 +49,7 @@ public final class DoubleJumpUi {
                 c.set("#DJStaminaCostTypeValue.Text", NA);
                 c.set("#DJStaminaCostValue.Text", NA);
                 c.set("#InfiniteDoubleJumpValue.Text", NA);
-                c.set("#DJMaxJumpsValue.Text", NA);
+                c.set("#DJMaxJumpsValue.Text", NA); // UI asset label ID; value is jump charges per ground reset
                 c.set("#ActivationMethodValue.Text", NA);
                 return;
             }
@@ -68,7 +68,7 @@ public final class DoubleJumpUi {
                 "#DJMaxJumpsValue.Text",
                 cfg.infiniteDoubleJump
                     ? "Unlimited"
-                    : String.valueOf(cfg.jumpCharges > 0 ? cfg.jumpCharges : cfg.totalJumpCharges()));
+                    : String.valueOf(cfg.totalJumpCharges()));
             c.set("#ActivationMethodValue.Text", DoubleJumpConfig.ActivationMode.from(cfg).uiLabel());
         }
     }
@@ -113,8 +113,8 @@ public final class DoubleJumpUi {
                 .add()
                 .append(
                     new KeyedCodec<>("@djMaxJumps", Codec.DOUBLE),
-                    (AdminEventData d, Double v) -> d.djMaxJumps = v,
-                    d -> Double.valueOf(d.djMaxJumps))
+                    (AdminEventData d, Double v) -> d.djJumpCharges = v,
+                    d -> Double.valueOf(d.djJumpCharges))
                 .add()
                 .build();
 
@@ -125,7 +125,8 @@ public final class DoubleJumpUi {
         public boolean djUsePercentageStamina;
         public double djStaminaLossPercentage;
         public boolean infiniteDoubleJump;
-        public double djMaxJumps;
+        /** Bound to {@code @djMaxJumps} in UI assets; persisted as {@link DoubleJumpConfig#jumpCharges}. */
+        public double djJumpCharges;
 
         public AdminEventData() {}
     }
@@ -153,8 +154,7 @@ public final class DoubleJumpUi {
             commands.set("#DJUsePercentageStaminaCheckBox.Value", config.usePercentageStamina);
             commands.set("#DJStaminaLossPercentageInput.Value", config.staminaLossPercentage);
             commands.set("#InfiniteDoubleJumpCheckBox.Value", config.infiniteDoubleJump);
-            commands.set(
-                "#DJMaxJumpsInput.Value", config.jumpCharges > 0 ? config.jumpCharges : config.totalJumpCharges());
+            commands.set("#DJMaxJumpsInput.Value", config.totalJumpCharges());
             events.addEventBinding(
                 CustomUIEventBindingType.Activating,
                 "#SaveButton",
@@ -183,7 +183,7 @@ public final class DoubleJumpUi {
             config.usePercentageStamina = data.djUsePercentageStamina;
             config.staminaLossPercentage = (float) data.djStaminaLossPercentage;
             config.infiniteDoubleJump = data.infiniteDoubleJump;
-            config.jumpCharges = (int) data.djMaxJumps;
+            config.jumpCharges = (int) data.djJumpCharges;
             config.maxJumps = Math.max(0, config.jumpCharges - 1);
             DoubleJumpConfig.saveToDisk();
             ((HytaleLogger.Api) LOGGER.atFine()).log("Double Jump: Settings saved and applied");

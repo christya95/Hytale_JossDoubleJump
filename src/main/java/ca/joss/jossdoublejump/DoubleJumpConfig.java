@@ -15,6 +15,8 @@ public final class DoubleJumpConfig {
     private static Gson gson;
     public float horizontalBoost;
     public float verticalBoost;
+    /** Small upward boost applied on the initial ground jump (after input), to make the liftoff a bit higher. */
+    public float initialJumpBoostY;
     public long cooldownMs;
     public float staminaCost;
     public boolean usePercentageStamina;

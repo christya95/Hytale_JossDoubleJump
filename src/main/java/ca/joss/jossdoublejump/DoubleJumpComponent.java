@@ -12,6 +12,16 @@ public class DoubleJumpComponent implements Component<EntityStore> {
         AIR_SPENT
     }
 
+    /** Input FSM for detecting the second jump request (separate from the phase/charges FSM). */
+    public enum InputState {
+        /** Airborne and waiting for a new press edge. */
+        WAITING_FOR_PRESS,
+        /** Jump signal is currently held down. */
+        HELD,
+        /** Short debounce after an edge so we don't re-trigger on jitter/dup packets. */
+        COOLDOWN_FRAMES
+    }
+
     /** Successful mod {@link ca.joss.jossdoublejump.DoubleJumpTicking#tryApply} calls this airtime (log / debug). */
     int jumpCount;
     long lastDoubleJumpTimeMs;
@@ -22,11 +32,15 @@ public class DoubleJumpComponent implements Component<EntityStore> {
     Phase phase = Phase.GROUNDED;
 
     /**
-     * Previous tick's processed {@link com.hypixel.hytale.protocol.MovementStates#jumping} (after
-     * {@link com.hypixel.hytale.server.core.modules.entity.player.PlayerSystems.ProcessPlayerInput}), for rising-edge
-     * detection. Updated on grounded and each airborne tick.
+     * Input FSM state while airborne. Reset on landing.
      */
-    boolean jumpPressedLastAfterInput;
+    InputState inputState = InputState.WAITING_FOR_PRESS;
+
+    /** Last sampled jump signal (from raw input when available; else fallback). */
+    boolean jumpSignalLast;
+
+    /** Remaining debounce frames when {@link #inputState} is {@link InputState#COOLDOWN_FRAMES}. */
+    int inputCooldownFramesRemaining;
 
     /**
      * End state of {@code jumping} after simulating {@link com.hypixel.hytale.server.core.modules.entity.player.PlayerInput}'s
@@ -35,15 +49,6 @@ public class DoubleJumpComponent implements Component<EntityStore> {
      * can disagree with the queue for the same frame).
      */
     boolean jumpHeldLastQueue;
-
-    /**
-     * While airborne: set {@link #jumpReleasedSinceAirborne} only after we saw a jump press in air, then release — avoids
-     * treating ledge-fall as "released" and gates the mod double jump to release-then-press.
-     */
-    boolean hadJumpPressWhileAirborne;
-
-    /** Airborne only: true after {@link #hadJumpPressWhileAirborne} and then a processed jump release. Reset on landing. */
-    boolean jumpReleasedSinceAirborne;
 
     /**
      * Set when the queue walk sees a jump rising edge; optional time buffer extends consumption into {@link DoubleJumpTicking.AfterInputSystem}.
@@ -60,10 +65,10 @@ public class DoubleJumpComponent implements Component<EntityStore> {
         c.lastDoubleJumpTimeMs = this.lastDoubleJumpTimeMs;
         c.chargesRemaining = this.chargesRemaining;
         c.phase = this.phase;
-        c.jumpPressedLastAfterInput = this.jumpPressedLastAfterInput;
+        c.inputState = this.inputState;
+        c.jumpSignalLast = this.jumpSignalLast;
+        c.inputCooldownFramesRemaining = this.inputCooldownFramesRemaining;
         c.jumpHeldLastQueue = this.jumpHeldLastQueue;
-        c.hadJumpPressWhileAirborne = this.hadJumpPressWhileAirborne;
-        c.jumpReleasedSinceAirborne = this.jumpReleasedSinceAirborne;
         c.pendingQueueJumpEdge = this.pendingQueueJumpEdge;
         c.queueJumpEdgeBufferUntilMs = this.queueJumpEdgeBufferUntilMs;
         return c;
