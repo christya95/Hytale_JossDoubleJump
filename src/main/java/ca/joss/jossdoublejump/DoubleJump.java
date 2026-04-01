@@ -38,7 +38,7 @@ import ca.joss.jossdoublejump.util.ConfigLoader;
 
 public class DoubleJump extends JavaPlugin {
     private static final HytaleLogger LOGGER = Log.INSTANCE;
-    /** Writable folder; config file is {@code double_jump_config.json} inside it (i.e. {@code mods/double_jump_config.json}). */
+    /** Writable folder; config file is {@link DoubleJumpConfig#CONFIG_FILE_NAME} inside it (e.g. {@code mods/JossDoubleJumpConfig.json}). */
     private static final File CONFIG_DIR = new File("mods");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final ConfigLoader CONFIG_LOADER = new ConfigLoader(LOGGER);
@@ -70,7 +70,7 @@ public class DoubleJump extends JavaPlugin {
         ((HytaleLogger.Api) LOGGER.atInfo()).log("Setting Up");
         version = "v" + this.getManifest().getVersion().toString();
         ensureConfigDir();
-        migrateLegacyConfigIfNeeded();
+        migrateLegacyConfigsIfNeeded();
         DoubleJumpConfig.load(CONFIG_DIR, GSON);
         ComponentRegistryProxy reg = this.getEntityStoreRegistry();
         doubleJumpComponentType = reg.registerComponent(DoubleJumpComponent.class, DoubleJumpComponent::new);
@@ -96,16 +96,24 @@ public class DoubleJump extends JavaPlugin {
         }
     }
 
-    /** Older builds used {@code mods/JossDoubleJump/double_jump_config.json}; copy once if the new path is empty. */
-    private void migrateLegacyConfigIfNeeded() {
-        File modern = new File(CONFIG_DIR, "double_jump_config.json");
-        File legacy = new File("mods/JossDoubleJump/double_jump_config.json");
-        if (modern.exists() || !legacy.isFile()) {
+    /**
+     * Prefer {@code mods/JossDoubleJumpConfig.json}: copy once from older filenames/locations if the new file is missing.
+     */
+    private void migrateLegacyConfigsIfNeeded() {
+        File primary = new File(CONFIG_DIR, DoubleJumpConfig.CONFIG_FILE_NAME);
+        if (primary.exists()) {
+            return;
+        }
+        File oldFlat = new File(CONFIG_DIR, "double_jump_config.json");
+        File legacyNested = new File("mods/JossDoubleJump/double_jump_config.json");
+        File source = oldFlat.isFile() ? oldFlat : (legacyNested.isFile() ? legacyNested : null);
+        if (source == null) {
             return;
         }
         try {
-            Files.copy(legacy.toPath(), modern.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            ((HytaleLogger.Api) LOGGER.atInfo()).log("Migrated config from mods/JossDoubleJump/ to mods/double_jump_config.json");
+            Files.copy(source.toPath(), primary.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            ((HytaleLogger.Api) LOGGER.atInfo())
+                .log("Migrated config %s -> mods/%s", source.getPath(), DoubleJumpConfig.CONFIG_FILE_NAME);
         } catch (IOException e) {
             ((HytaleLogger.Api) LOGGER.atWarning()).log("Could not migrate legacy config: " + e.getMessage());
         }
@@ -148,7 +156,13 @@ final class PlayerJoinDoubleJumpAdder extends RefSystem<EntityStore> {
                 doubleJumpComponent.jumpCount = 0;
                 doubleJumpComponent.lastDoubleJumpTimeMs = 0L;
                 doubleJumpComponent.phase = DoubleJumpComponent.Phase.GROUNDED;
-                doubleJumpComponent.airJumpPressPending = false;
+                doubleJumpComponent.jumpPressedLastAfterInput = false;
+                doubleJumpComponent.jumpHeldLastQueue = false;
+                doubleJumpComponent.hadJumpPressWhileAirborne = false;
+                doubleJumpComponent.jumpReleasedSinceAirborne = false;
+                doubleJumpComponent.chargesRemaining = 0;
+                doubleJumpComponent.pendingQueueJumpEdge = false;
+                doubleJumpComponent.queueJumpEdgeBufferUntilMs = 0L;
             }
         }
     }

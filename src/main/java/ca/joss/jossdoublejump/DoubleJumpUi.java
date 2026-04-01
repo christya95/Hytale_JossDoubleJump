@@ -64,7 +64,11 @@ public final class DoubleJumpUi {
                     ? String.format(Locale.US, "%.1f%%", cfg.staminaLossPercentage)
                     : String.format(Locale.US, "%.1f", cfg.staminaCost));
             c.set("#InfiniteDoubleJumpValue.Text", cfg.infiniteDoubleJump ? "Enabled" : "Disabled");
-            c.set("#DJMaxJumpsValue.Text", cfg.infiniteDoubleJump ? "Unlimited" : String.valueOf(cfg.maxJumps));
+            c.set(
+                "#DJMaxJumpsValue.Text",
+                cfg.infiniteDoubleJump
+                    ? "Unlimited"
+                    : String.valueOf(cfg.jumpCharges > 0 ? cfg.jumpCharges : cfg.totalJumpCharges()));
             c.set("#ActivationMethodValue.Text", DoubleJumpConfig.ActivationMode.from(cfg).uiLabel());
         }
     }
@@ -149,7 +153,8 @@ public final class DoubleJumpUi {
             commands.set("#DJUsePercentageStaminaCheckBox.Value", config.usePercentageStamina);
             commands.set("#DJStaminaLossPercentageInput.Value", config.staminaLossPercentage);
             commands.set("#InfiniteDoubleJumpCheckBox.Value", config.infiniteDoubleJump);
-            commands.set("#DJMaxJumpsInput.Value", config.maxJumps);
+            commands.set(
+                "#DJMaxJumpsInput.Value", config.jumpCharges > 0 ? config.jumpCharges : config.totalJumpCharges());
             events.addEventBinding(
                 CustomUIEventBindingType.Activating,
                 "#SaveButton",
@@ -178,7 +183,8 @@ public final class DoubleJumpUi {
             config.usePercentageStamina = data.djUsePercentageStamina;
             config.staminaLossPercentage = (float) data.djStaminaLossPercentage;
             config.infiniteDoubleJump = data.infiniteDoubleJump;
-            config.maxJumps = (int) data.djMaxJumps;
+            config.jumpCharges = (int) data.djMaxJumps;
+            config.maxJumps = Math.max(0, config.jumpCharges - 1);
             DoubleJumpConfig.saveToDisk();
             ((HytaleLogger.Api) LOGGER.atFine()).log("Double Jump: Settings saved and applied");
             this.close();

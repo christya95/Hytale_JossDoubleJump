@@ -7,7 +7,9 @@
   "staminaLossPercentage": 10.0,
   "infiniteDoubleJump": false,
   "maxJumps": 1,
+  "jumpCharges": 2,
   "useAbility2": false,
   "useAbility3": false,
-  "useJumpKey": true
+  "useJumpKey": true,
+  "usageNote": "Informational: jumpCharges=2 means one charge consumed at liftoff and one left for the mod air jump (reset on landing). Jump-key mode assumes normal survival movement."
 }

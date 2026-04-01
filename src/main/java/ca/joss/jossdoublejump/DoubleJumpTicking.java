@@ -31,19 +31,197 @@ import com.hypixel.hytale.server.core.modules.time.TimeResource;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.PlayerUtil;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import ca.joss.jossdoublejump.util.StatUtil;
 
 /**
- * Double-jump gameplay: movement-queue scan (before input), phase updates + consume (after input),
- * and shared apply logic for jump-key and ability triggers.
+ * Jump-charge gameplay: liftoff consumes one charge; the next jump press edge (queue or processed) spends the rest and
+ * runs {@link #tryApply}. Movement-queue jump edges (before input) back up processed state. Shared apply for jump-key
+ * and ability triggers.
  */
 final class DoubleJumpTicking {
 
+    /** Consume a queue-detected jump edge in AfterInput within this window (ms) if the boolean was cleared same tick. */
+    private static final long QUEUE_JUMP_EDGE_BUFFER_MS = 120L;
+
+    /** Per {@link PlayerInput.InputUpdate} concrete class: no-arg boolean accessor for jump, or empty if none. */
+    private static final ConcurrentHashMap<Class<?>, Optional<Method>> JUMP_BOOL_GETTERS = new ConcurrentHashMap<>();
+
+    private static final String[] JUMP_BOOL_METHOD_NAMES = {
+        "jumping", "getJumping", "isJumping", "jump", "getJump", "isJump", "wantsJump", "isWantsJump"
+    };
+
+    /** Per {@link PlayerInput.InputUpdate} class: instance fields that may carry jump (booleans or nested {@link MovementStates}). */
+    private static final ConcurrentHashMap<Class<?>, JumpFieldProbe> JUMP_FIELD_PROBES = new ConcurrentHashMap<>();
+
+    private static final class JumpFieldProbe {
+        final Field[] boolJumpFields;
+        final Field[] movementStatesFields;
+
+        JumpFieldProbe(Field[] boolJumpFields, Field[] movementStatesFields) {
+            this.boolJumpFields = boolJumpFields;
+            this.movementStatesFields = movementStatesFields;
+        }
+
+        boolean isEmpty() {
+            return boolJumpFields.length == 0 && movementStatesFields.length == 0;
+        }
+    }
+
     private DoubleJumpTicking() {}
+
+    /**
+     * Walk every queued update: some ticks only expose jump through non-{@link PlayerInput.SetMovementStates} types that
+     * still provide {@code movementStates()}.
+     */
+    @Nullable
+    private static MovementStates movementStatesFromInputUpdate(PlayerInput.InputUpdate update) {
+        if (update instanceof PlayerInput.SetMovementStates sms) {
+            return sms.movementStates();
+        }
+        Class<?> c = update.getClass();
+        for (String name : new String[] {"movementStates", "getMovementStates"}) {
+            for (boolean declared : new boolean[] {false, true}) {
+                try {
+                    Method m = declared ? c.getDeclaredMethod(name) : c.getMethod(name);
+                    if (declared) {
+                        m.setAccessible(true);
+                    }
+                    Object r = m.invoke(update);
+                    if (r instanceof MovementStates) {
+                        return (MovementStates) r;
+                    }
+                } catch (ReflectiveOperationException ignored) {
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Jump bit for queue simulation: {@link MovementStates#jumping} when present, else a cached no-arg boolean getter
+     * on packets like {@code AbsoluteMovement} (often no {@code movementStates()}).
+     *
+     * @return {@code null} when this update carries no jump signal we can read
+     */
+    @Nullable
+    private static Boolean jumpBitFromInputUpdate(PlayerInput.InputUpdate update) {
+        MovementStates ms = movementStatesFromInputUpdate(update);
+        if (ms != null) {
+            return ms.jumping;
+        }
+        Method m = jumpBoolGetterForClass(update.getClass());
+        if (m != null) {
+            try {
+                Object r = m.invoke(update);
+                if (r instanceof Boolean) {
+                    return (Boolean) r;
+                }
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }
+        return jumpBitFromFields(update);
+    }
+
+    /**
+     * {@code AbsoluteMovement} / velocity packets often store movement in private fields (no boolean accessors we know by name).
+     */
+    @Nullable
+    private static Boolean jumpBitFromFields(PlayerInput.InputUpdate update) {
+        JumpFieldProbe probe = jumpFieldProbeForClass(update.getClass());
+        if (probe.isEmpty()) {
+            return null;
+        }
+        for (Field f : probe.boolJumpFields) {
+            try {
+                Object v = f.get(update);
+                if (v instanceof Boolean) {
+                    return (Boolean) v;
+                }
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }
+        for (Field f : probe.movementStatesFields) {
+            try {
+                Object v = f.get(update);
+                if (v instanceof MovementStates) {
+                    return ((MovementStates) v).jumping;
+                }
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static JumpFieldProbe jumpFieldProbeForClass(Class<?> c) {
+        return JUMP_FIELD_PROBES.computeIfAbsent(c, DoubleJumpTicking::buildJumpFieldProbe);
+    }
+
+    private static JumpFieldProbe buildJumpFieldProbe(Class<?> start) {
+        List<Field> bools = new ArrayList<>();
+        List<Field> states = new ArrayList<>();
+        for (Class<?> c = start; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Field f : c.getDeclaredFields()) {
+                if (Modifier.isStatic(f.getModifiers())) {
+                    continue;
+                }
+                f.setAccessible(true);
+                Class<?> t = f.getType();
+                if (MovementStates.class.isAssignableFrom(t)) {
+                    states.add(f);
+                } else if ((t == boolean.class || t == Boolean.class)
+                    && f.getName().toLowerCase(Locale.ROOT).contains("jump")) {
+                    bools.add(f);
+                }
+            }
+        }
+        return new JumpFieldProbe(bools.toArray(new Field[0]), states.toArray(new Field[0]));
+    }
+
+    @Nullable
+    private static Method jumpBoolGetterForClass(Class<?> c) {
+        Optional<Method> cached = JUMP_BOOL_GETTERS.get(c);
+        if (cached != null) {
+            return cached.orElse(null);
+        }
+        Method found = findJumpBoolGetter(c);
+        JUMP_BOOL_GETTERS.put(c, Optional.ofNullable(found));
+        return found;
+    }
+
+    @Nullable
+    private static Method findJumpBoolGetter(Class<?> c) {
+        for (String name : JUMP_BOOL_METHOD_NAMES) {
+            for (boolean declared : new boolean[] {false, true}) {
+                try {
+                    Method m = declared ? c.getDeclaredMethod(name) : c.getMethod(name);
+                    if (m.getParameterCount() != 0) {
+                        continue;
+                    }
+                    Class<?> rt = m.getReturnType();
+                    if (rt != boolean.class && rt != Boolean.class) {
+                        continue;
+                    }
+                    if (declared) {
+                        m.setAccessible(true);
+                    }
+                    return m;
+                } catch (ReflectiveOperationException ignored) {
+                }
+            }
+        }
+        return null;
+    }
 
     static boolean tryApply(
         @Nonnull Ref<EntityStore> ref,
@@ -56,13 +234,20 @@ final class DoubleJumpTicking {
 
         MovementStatesComponent move =
             (MovementStatesComponent) commandBuffer.getComponent(ref, MovementStatesComponent.getComponentType());
-        if (move != null && !airborne(move.getMovementStates())) {
+        if (move == null) {
+            DoubleJumpTrace.log(ref, commandBuffer, "tryApply: blocked — no MovementStatesComponent");
             return false;
         }
-        if (!config.infiniteDoubleJump && dj.jumpCount >= config.maxJumps) {
+        if (!airborne(move.getMovementStates())) {
+            DoubleJumpTrace.log(ref, commandBuffer, "tryApply: blocked — not airborne (onGround/fluid/climb)");
+            return false;
+        }
+        if (!config.infiniteDoubleJump && dj.chargesRemaining <= 0) {
+            DoubleJumpTrace.log(ref, commandBuffer, "tryApply: blocked — no jump charges left");
             return false;
         }
         if (config.cooldownMs > 0L && nowMs - dj.lastDoubleJumpTimeMs < config.cooldownMs) {
+            DoubleJumpTrace.log(ref, commandBuffer, "tryApply: blocked — cooldown");
             return false;
         }
 
@@ -70,6 +255,10 @@ final class DoubleJumpTicking {
         EntityStatValue stamina = stats != null ? stats.get(StatUtil.staminaIndex()) : null;
         float staminaCost = stamina == null ? 0f : staminaCost(config, stamina);
         if (staminaCost > 0f && stamina.get() < staminaCost) {
+            DoubleJumpTrace.log(
+                ref,
+                commandBuffer,
+                "tryApply: blocked — stamina " + stamina.get() + " < cost " + staminaCost);
             return false;
         }
 
@@ -90,10 +279,17 @@ final class DoubleJumpTicking {
 
         dj.jumpCount++;
         dj.lastDoubleJumpTimeMs = nowMs;
-        if (!config.infiniteDoubleJump && dj.jumpCount >= config.maxJumps) {
-            dj.phase = DoubleJumpComponent.Phase.AIR_SPENT;
+        if (!config.infiniteDoubleJump) {
+            dj.chargesRemaining = Math.max(0, dj.chargesRemaining - 1);
+            if (dj.chargesRemaining <= 0) {
+                dj.phase = DoubleJumpComponent.Phase.AIR_SPENT;
+            }
         }
         playRoll(ref, commandBuffer);
+        DoubleJumpTrace.log(
+            ref,
+            commandBuffer,
+            "MOD_DOUBLE_JUMP_APPLIED — mod air jump #" + dj.jumpCount + " chargesLeft=" + dj.chargesRemaining + " impulse=(" + impulse.x + "," + impulse.y + "," + impulse.z + ")");
         return true;
     }
 
@@ -138,10 +334,15 @@ final class DoubleJumpTicking {
         }
     }
 
-    private static void onGrounded(DoubleJumpComponent dj) {
+    private static void onGrounded(DoubleJumpComponent dj, @Nullable DoubleJumpConfig cfg) {
         dj.phase = DoubleJumpComponent.Phase.GROUNDED;
         dj.jumpCount = 0;
-        dj.airJumpPressPending = false;
+        dj.pendingQueueJumpEdge = false;
+        dj.queueJumpEdgeBufferUntilMs = 0L;
+        dj.jumpHeldLastQueue = false;
+        dj.hadJumpPressWhileAirborne = false;
+        dj.jumpReleasedSinceAirborne = false;
+        dj.chargesRemaining = cfg != null && !cfg.infiniteDoubleJump ? cfg.totalJumpCharges() : 0;
     }
 
     private static void tickAirborne(DoubleJumpComponent dj, @Nullable DoubleJumpConfig cfg) {
@@ -151,30 +352,15 @@ final class DoubleJumpTicking {
         if (dj.phase == DoubleJumpComponent.Phase.GROUNDED) {
             dj.phase = DoubleJumpComponent.Phase.AIR_CAN_DOUBLE;
         }
-        if (!cfg.infiniteDoubleJump && dj.jumpCount >= cfg.maxJumps) {
+        if (!cfg.infiniteDoubleJump && dj.chargesRemaining <= 0) {
             dj.phase = DoubleJumpComponent.Phase.AIR_SPENT;
         }
     }
 
-    private static boolean consumeAirJumpPressIfPending(
-        Ref<EntityStore> ref,
-        CommandBuffer<EntityStore> cmd,
-        DoubleJumpComponent dj,
-        DoubleJumpConfig cfg
-    ) {
-        if (!dj.airJumpPressPending) {
-            return false;
-        }
-        dj.airJumpPressPending = false;
-        if (dj.phase != DoubleJumpComponent.Phase.AIR_CAN_DOUBLE) {
-            return false;
-        }
-        return tryApply(ref, cmd, dj, cfg);
-    }
-
     /**
-     * Runs before {@link PlayerSystems.ProcessPlayerInput} to read {@link PlayerInput#getMovementUpdateQueue()} for jump
-     * press edges while airborne.
+     * Runs before {@link PlayerSystems.ProcessPlayerInput}: detects jump rising edges in {@link PlayerInput#getMovementUpdateQueue()}.
+     * Processed {@link MovementStatesComponent#getMovementStates()}{@code .jumping} often stays false for mid-air presses,
+     * so {@link AfterInputSystem} also consumes {@link DoubleJumpComponent#pendingQueueJumpEdge}.
      */
     static final class QueueScannerSystem extends EntityTickingSystem<EntityStore> {
         private final ComponentType<EntityStore, DoubleJumpComponent> djType;
@@ -206,35 +392,97 @@ final class DoubleJumpTicking {
             if (cfg == null || DoubleJumpConfig.ActivationMode.from(cfg) != DoubleJumpConfig.ActivationMode.JUMP_KEY) {
                 return;
             }
+            Ref<EntityStore> ref = chunk.getReferenceTo(index);
             DoubleJumpComponent dj = chunk.getComponent(index, djType);
             MovementStatesComponent msc = chunk.getComponent(index, MovementStatesComponent.getComponentType());
             PlayerInput input = chunk.getComponent(index, PlayerInput.getComponentType());
             if (dj == null || msc == null || input == null) {
                 return;
             }
+            dj.pendingQueueJumpEdge = false;
             List<PlayerInput.InputUpdate> queue = input.getMovementUpdateQueue();
             if (queue == null || queue.isEmpty()) {
                 return;
             }
 
-            MovementStates cur = new MovementStates(msc.getMovementStates());
-            boolean curJump = cur.jumping;
-            for (PlayerInput.InputUpdate update : queue) {
-                if (update instanceof PlayerInput.SetMovementStates sms) {
-                    MovementStates n = sms.movementStates();
-                    boolean wasAirborne = !(cur.onGround || cur.inFluid || cur.climbing);
-                    if (wasAirborne && n.jumping && !curJump && dj.phase != DoubleJumpComponent.Phase.AIR_SPENT) {
-                        dj.airJumpPressPending = true;
+            long nowMs =
+                ((TimeResource) cmd.getResource(TimeResource.getResourceType())).getNow().toEpochMilli();
+
+            if (DoubleJumpTrace.is(ref, cmd)) {
+                StringBuilder sb = new StringBuilder(256);
+                sb.append("movementQueue: size=").append(queue.size()).append(" simPhase=").append(dj.phase);
+                for (PlayerInput.InputUpdate update : queue) {
+                    Boolean jb = jumpBitFromInputUpdate(update);
+                    sb.append(" | ").append(update.getClass().getSimpleName());
+                    if (jb != null) {
+                        sb.append("(j=").append(jb).append(")");
+                    } else {
+                        sb.append("(noBit)");
                     }
-                    cur = new MovementStates(n);
-                    curJump = n.jumping;
                 }
+                DoubleJumpTrace.log(ref, cmd, sb.toString());
+            }
+
+            MovementStates startMs = msc.getMovementStates();
+            boolean serverAirborne = airborne(startMs);
+
+            // Always advance queue simulation from last tick's end state (not raw msc — it can disagree with this queue).
+            boolean prevQJump = dj.jumpHeldLastQueue;
+            boolean curQJump = prevQJump;
+            boolean risingEdge = false;
+            for (PlayerInput.InputUpdate update : queue) {
+                Boolean j = jumpBitFromInputUpdate(update);
+                if (j == null) {
+                    continue;
+                }
+                if (j && !curQJump) {
+                    risingEdge = true;
+                }
+                curQJump = j;
+            }
+            dj.jumpHeldLastQueue = curQJump;
+
+            if (!serverAirborne) {
+                return;
+            }
+
+            if (!cfg.infiniteDoubleJump && (dj.chargesRemaining <= 0 || dj.phase == DoubleJumpComponent.Phase.AIR_SPENT)) {
+                return;
+            }
+
+            if (!dj.jumpReleasedSinceAirborne) {
+                if (DoubleJumpTrace.is(ref, cmd)) {
+                    DoubleJumpTrace.log(
+                        ref,
+                        cmd,
+                        "queueScan: skip edge (not releasedSinceAir yet) prevQJump=" + prevQJump + " endQJump=" + curQJump + " risingEdge=" + risingEdge);
+                }
+                return;
+            }
+
+            boolean netEdge = curQJump && !prevQJump;
+            if (risingEdge || netEdge) {
+                dj.pendingQueueJumpEdge = true;
+                dj.queueJumpEdgeBufferUntilMs = nowMs + QUEUE_JUMP_EDGE_BUFFER_MS;
+                DoubleJumpTrace.log(
+                    ref,
+                    cmd,
+                    "queueScan: airborne phase=" + dj.phase + " prevQJump=" + prevQJump + " endQJump=" + curQJump
+                        + " risingEdge=" + risingEdge + " netEdge=" + netEdge + " releasedSinceAir=true -> pending+buffer "
+                        + QUEUE_JUMP_EDGE_BUFFER_MS + "ms");
+            } else if (DoubleJumpTrace.is(ref, cmd)) {
+                DoubleJumpTrace.log(
+                    ref,
+                    cmd,
+                    "queueScan: airborne phase=" + dj.phase + " prevQJump=" + prevQJump + " endQJump=" + curQJump
+                        + " risingEdge=false netEdge=false releasedSinceAir=true");
             }
         }
     }
 
     /**
-     * After {@link PlayerSystems.ProcessPlayerInput}: phase transitions and consuming queued jump presses.
+     * After {@link PlayerSystems.ProcessPlayerInput}: phase transitions and jump-key trigger from processed movement
+     * and/or {@link DoubleJumpComponent#pendingQueueJumpEdge}.
      */
     static final class AfterInputSystem extends EntityTickingSystem<EntityStore> {
         private final ComponentType<EntityStore, DoubleJumpComponent> djType;
@@ -269,20 +517,59 @@ final class DoubleJumpTicking {
                 return;
             }
 
+            Ref<EntityStore> ref = chunk.getReferenceTo(index);
             MovementStates st = msc.getMovementStates();
             boolean grounded = st.onGround || st.inFluid || st.climbing;
 
             if (grounded) {
-                onGrounded(dj);
+                dj.jumpPressedLastAfterInput = st.jumping;
+                onGrounded(dj, cfg);
                 return;
+            }
+
+            boolean liftoffTick = dj.phase == DoubleJumpComponent.Phase.GROUNDED;
+            if (!cfg.infiniteDoubleJump && liftoffTick) {
+                dj.chargesRemaining = Math.max(0, dj.chargesRemaining - 1);
+            }
+
+            boolean prevJumpAfterInput = dj.jumpPressedLastAfterInput;
+            if (st.jumping) {
+                dj.hadJumpPressWhileAirborne = true;
+            } else if (dj.hadJumpPressWhileAirborne) {
+                dj.jumpReleasedSinceAirborne = true;
             }
 
             tickAirborne(dj, cfg);
 
-            if (DoubleJumpConfig.ActivationMode.from(cfg) == DoubleJumpConfig.ActivationMode.JUMP_KEY) {
-                Ref<EntityStore> ref = chunk.getReferenceTo(index);
-                consumeAirJumpPressIfPending(ref, cmd, dj, cfg);
+            long nowMs =
+                ((TimeResource) cmd.getResource(TimeResource.getResourceType())).getNow().toEpochMilli();
+            boolean queueEdge =
+                dj.pendingQueueJumpEdge || (dj.queueJumpEdgeBufferUntilMs != 0L && nowMs < dj.queueJumpEdgeBufferUntilMs);
+            boolean processedEdge = st.jumping && !prevJumpAfterInput;
+
+            DoubleJumpTrace.log(
+                ref,
+                cmd,
+                "afterInput: phase=" + dj.phase + " charges=" + dj.chargesRemaining + " liftoffTick=" + liftoffTick
+                    + " releasedSinceAir=" + dj.jumpReleasedSinceAirborne + " prevJump=" + prevJumpAfterInput
+                    + " queueEdge=" + queueEdge + " procEdge=" + processedEdge
+                    + " move(jump=" + st.jumping + ",og=" + st.onGround + ",fluid=" + st.inFluid + ",climb=" + st.climbing + ")");
+
+            if (DoubleJumpConfig.ActivationMode.from(cfg) == DoubleJumpConfig.ActivationMode.JUMP_KEY
+                && dj.phase == DoubleJumpComponent.Phase.AIR_CAN_DOUBLE
+                && !liftoffTick
+                && dj.jumpReleasedSinceAirborne
+                && (queueEdge || processedEdge)
+                && (cfg.infiniteDoubleJump || dj.chargesRemaining > 0)) {
+                if (tryApply(ref, cmd, dj, cfg)) {
+                    dj.queueJumpEdgeBufferUntilMs = 0L;
+                }
             }
+
+            dj.pendingQueueJumpEdge = false;
+            dj.jumpPressedLastAfterInput = st.jumping;
+            // Next tick's queue baseline should match post-input jump as well as queue simulation (often diverge).
+            dj.jumpHeldLastQueue = dj.jumpHeldLastQueue || st.jumping;
         }
     }
 }

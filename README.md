@@ -13,7 +13,7 @@ Server-side **double jump**: an extra air jump when you press jump again while a
 Hytale_JossDoubleJump/
 ├── docs/                    # Developer guide (build, layout, incremental compile)
 ├── jar-assets/              # manifest.json + double_jump_defaults.json → baked into the JAR
-├── runtime-config/          # Sample double_jump_config.json for the server
+├── runtime-config/          # Sample JossDoubleJumpConfig.json for the server
 ├── scripts/                 # build.ps1, repack-jar.ps1, sync-to-mods.ps1, push-github.*
 ├── src/main/java/.../       # Java package ca.joss.jossdoublejump
 ├── dist/                    # JossDoubleJump.jar output (gitignored)
@@ -46,15 +46,15 @@ Hytale_JossDoubleJump/
 
 1. Avoid loading another double-jump mod at the same time.
 2. Upload **`JossDoubleJump.jar`** to **`mods/`** (only this file is required).
-3. Start or restart the server. On first run the mod creates **`mods/double_jump_config.json`** from the defaults baked into the JAR (you can edit that file later).
+3. Start or restart the server. On first run the mod creates **`mods/JossDoubleJumpConfig.json`** from the defaults baked into the JAR (you can edit that file later).
 
-Optional: copy **`runtime-config/double_jump_config.json`** into **`mods/`** yourself if you want specific values before the first boot.
+Optional: copy **`runtime-config/JossDoubleJumpConfig.json`** into **`mods/`** yourself if you want specific values before the first boot.
 
 ---
 
 ## Config
 
-Edit **`mods/double_jump_config.json`** on the server when you want to tune settings. The sample in **`runtime-config/`** matches the embedded defaults.
+Edit **`mods/JossDoubleJumpConfig.json`** on the server when you want to tune settings. The sample in **`runtime-config/`** matches the embedded defaults. Older installs may have **`mods/double_jump_config.json`**; the mod copies that to the new name once if the new file is missing.
 
 - **`useJumpKey`** — use jump in the air for the extra jump (recommended).
 - **`useAbility2` / `useAbility3`** — optional ability-based activation.

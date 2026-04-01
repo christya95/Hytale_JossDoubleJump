@@ -6,6 +6,9 @@ import java.io.File;
 import javax.annotation.Nullable;
 
 public final class DoubleJumpConfig {
+    /** Disk file under the server {@code mods/} folder. */
+    public static final String CONFIG_FILE_NAME = "JossDoubleJumpConfig.json";
+
     private static final HytaleLogger LOGGER = Log.INSTANCE;
     private static DoubleJumpConfig instance;
     private static File configDir;
@@ -18,9 +21,20 @@ public final class DoubleJumpConfig {
     public float staminaLossPercentage;
     public boolean infiniteDoubleJump;
     public int maxJumps;
+    /**
+     * Total jump charges per ground contact (e.g. 2 = one consumed at liftoff, one left for the mod air jump). If 0,
+     * {@link #maxJumps} legacy is used: {@code maxJumps + 1} (extra air jumps + liftoff).
+     */
+    public int jumpCharges;
     public boolean useAbility2;
     public boolean useAbility3;
     public boolean useJumpKey;
+
+    /**
+     * Informational only (persisted in JSON for operators). Not read by gameplay code. Jump-key detection assumes normal
+     * survival-style movement; creative flight and similar modes often use different input and movement state.
+     */
+    public String usageNote;
 
     /** Resolved from config booleans (jump key wins over ability flags). */
     public enum ActivationMode {
@@ -62,15 +76,25 @@ public final class DoubleJumpConfig {
     public static void load(File file, Gson gson) {
         configDir = file;
         DoubleJumpConfig.gson = gson;
-        instance = DoubleJump.getConfigLoader().load(DoubleJumpConfig.class, "double_jump_config.json", "double_jump_defaults.json", file, gson);
+        instance =
+            DoubleJump.getConfigLoader()
+                .load(DoubleJumpConfig.class, CONFIG_FILE_NAME, "double_jump_defaults.json", file, gson);
         ((HytaleLogger.Api) LOGGER.atInfo()).log("Loaded successfully");
     }
 
     public static void saveToDisk() {
-        DoubleJump.getConfigLoader().save(new File(configDir, "double_jump_config.json"), instance, gson);
+        DoubleJump.getConfigLoader().save(new File(configDir, CONFIG_FILE_NAME), instance, gson);
     }
 
     public static DoubleJumpConfig get() {
         return instance;
+    }
+
+    /** Total charges while grounded / at reset; ignores value when {@link #infiniteDoubleJump} is true (handled elsewhere). */
+    public int totalJumpCharges() {
+        if (jumpCharges > 0) {
+            return jumpCharges;
+        }
+        return maxJumps + 1;
     }
 }

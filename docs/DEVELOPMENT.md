@@ -6,7 +6,7 @@
 |------|------|
 | `src/main/java/ca/joss/jossdoublejump/` | Plugin code (`ca.joss.jossdoublejump` + `ui`, `util`). |
 | `jar-assets/` | **`manifest.json`** and **`double_jump_defaults.json`** copied into the JAR by the build scripts. |
-| `runtime-config/` | Sample **`double_jump_config.json`** (optional; the mod writes **`mods/double_jump_config.json`** on first run from JAR defaults). |
+| `runtime-config/` | Sample **`JossDoubleJumpConfig.json`** (optional; the mod writes **`mods/JossDoubleJumpConfig.json`** on first run from JAR defaults). |
 | `scripts/` | **`build.ps1`** (full compile), **`repack-jar.ps1`** (refresh JAR without javac), **`sync-to-mods.ps1`** (copy to `mods/`). |
 | `dist/` | **`JossDoubleJump.jar`** output (gitignored). |
 | `build/` | Scratch: classes, unpack dirs (gitignored). |
@@ -24,7 +24,7 @@ The running server reads config from **`mods/JossDoubleJump/`** (path inside the
 
 - **`scripts/build.ps1`** — compiles all of **`src/main/java`**, merges into the unpacked template, overwrites manifest/defaults from **`jar-assets/`**, writes **`dist/JossDoubleJump.jar`**.
 - **`scripts/repack-jar.ps1`** — no compile; unpacks a template JAR, applies **`jar-assets/`**, repacks **`dist/JossDoubleJump.jar`**.
-- **`scripts/sync-to-mods.ps1`** — copies **`dist/JossDoubleJump.jar`** and **`runtime-config/double_jump_config.json`** to **`<server>/mods/`** (use **`PEBBLE_SERVER_ROOT`** when the server is not this repo).
+- **`scripts/sync-to-mods.ps1`** — copies **`dist/JossDoubleJump.jar`** and **`runtime-config/JossDoubleJumpConfig.json`** to **`<server>/mods/`** (use **`PEBBLE_SERVER_ROOT`** when the server is not this repo).
 
 ## Incremental compile
 
