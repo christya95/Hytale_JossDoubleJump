@@ -1,24 +1,22 @@
-# Produce dist/JossDoubleJump.jar from an existing template JAR + build/assets (no javac).
-# Use when sources are CFR snapshots and full compile is not available. Output is gitignored (dist/).
+# Refresh dist/JossDoubleJump.jar from an existing JAR + jar-assets (no javac).
 $ErrorActionPreference = "Stop"
 $jossRoot = Split-Path $PSScriptRoot -Parent
-$assetsDir = Join-Path $jossRoot "build\assets"
+$assetsDir = Join-Path $jossRoot "jar-assets"
 $workDir = Join-Path $jossRoot "build\unpack-repack"
 $jdkHome = Get-ChildItem (Join-Path $jossRoot "tools\jdk25") -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $jdkHome) { throw "Missing tools\jdk25 under $jossRoot (need jar.exe). tools\ is gitignored; install JDK 25 locally." }
+if (-not $jdkHome) { throw "Missing tools\jdk25 (need jar.exe)." }
 $jar = Join-Path $jdkHome.FullName "bin\jar.exe"
 
 $parent = Split-Path $jossRoot -Parent
 $serverMods = Join-Path (Join-Path $parent "PebbleHotServerRoot") "mods"
-$upstream = @(
-  (Join-Path $jossRoot "mods\JossDoubleJump.jar"),
-  (Join-Path $serverMods "JossDoubleJump.jar"),
+$templateJar = @(
   (Join-Path $jossRoot "dist\JossDoubleJump.jar"),
-  (Join-Path $serverMods "Double Jump-0.1.5.jar")
+  (Join-Path $jossRoot "mods\JossDoubleJump.jar"),
+  (Join-Path $serverMods "JossDoubleJump.jar")
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-if (-not $upstream) {
-  throw "No template JAR found. Add dist\JossDoubleJump.jar, copy JossDoubleJump.jar under mods\, or install Double Jump / this mod on a server next to the repo."
+if (-not $templateJar) {
+  throw "No JossDoubleJump.jar found. Add dist\JossDoubleJump.jar or mods\JossDoubleJump.jar."
 }
 $def = Join-Path $assetsDir "double_jump_defaults.json"
 $mft = Join-Path $assetsDir "manifest.json"
@@ -29,7 +27,7 @@ Remove-Item -Recurse -Force $workDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $workDir | Out-Null
 Push-Location $workDir
 try {
-  & $jar xf $upstream
+  & $jar xf $templateJar
 } finally {
   Pop-Location
 }
@@ -46,4 +44,4 @@ try {
 } finally {
   Pop-Location
 }
-Write-Host "Repacked: $outJar (from $upstream)"
+Write-Host "Repacked: $outJar (from $templateJar)"

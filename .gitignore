@@ -1,21 +1,22 @@
-# Local JDK / decompiler bundles (too large for git; install your own JDK 25 for builds)
+# Local JDK (install JDK 25 under tools/jdk25 for build scripts)
 tools/
 
-# Build outputs (build from source; attach to GitHub Releases if you ship binaries)
+# Built JAR output
 dist/
 
-# Local drops / sync targets (canonical files: runtime-config/, scripts/sync-to-mods.ps1)
+# Local mod drops / sync targets
 mods/
 
-# Build scratch (keep build/assets for manifests + defaults)
+# Build scratch (tracked: jar-assets/ — manifest + default JSON for the JAR)
 build/classes/
 build/classes-patch/
 build/compile-out/
 build/patch-classes/
 build/unpack-original/
+build/unpack-repack/
 build/unpack*/
 
-# GitHub CLI config when using scripts/push-github.ps1 (GH_CONFIG_DIR=.gh-config)
+# GitHub CLI when using scripts/push-github.ps1
 .gh-config/
 
 # Editor / OS noise

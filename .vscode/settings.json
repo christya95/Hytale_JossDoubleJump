@@ -1,0 +1,4 @@
+{
+  // Gitignored folders (build/, dist/, mods/, tools/) still show in Explorer — they are local/temporary.
+  "explorer.excludeGitIgnore": false
+}

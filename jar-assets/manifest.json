@@ -1,0 +1,23 @@
+{
+    "Group": "joss",
+    "Name": "JossDoubleJump",
+    "Version": "0.2.0",
+    "Description": "Server-side double jump: extra air jump on jump press while airborne. Stamina and boosts are configurable.",
+    "Authors": [
+        {
+            "Name": "Joss"
+        }
+    ],
+    "Website": "",
+    "ServerVersion": "2026.03.26-89796e57b",
+    "Dependencies": {
+        "Hytale:EntityModule": "*",
+        "Hytale:DamageModule": "*"
+    },
+    "OptionalDependencies": {
+
+    },
+    "DisabledByDefault": false,
+    "Main": "ca.joss.jossdoublejump.DoubleJump",
+    "IncludesAssetPack": true
+}
