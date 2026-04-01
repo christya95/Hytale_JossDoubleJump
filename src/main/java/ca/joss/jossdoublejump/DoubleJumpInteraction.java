@@ -17,7 +17,7 @@ import javax.annotation.Nonnull;
 
 public class DoubleJumpInteraction extends SimpleInstantInteraction {
 
-    private static final HytaleLogger LOGGER = DoubleJumpLogger.get();
+    private static final HytaleLogger LOGGER = Log.INSTANCE;
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     @Nonnull
@@ -68,7 +68,7 @@ public class DoubleJumpInteraction extends SimpleInstantInteraction {
             fail(ctx, "no DoubleJumpComponent");
             return;
         }
-        boolean ok = DoubleJumpExecutor.tryApply(ref, buf, dj, cfg);
+        boolean ok = DoubleJumpTicking.tryApply(ref, buf, dj, cfg);
         ctx.getState().state = ok ? InteractionState.Finished : InteractionState.Failed;
     }
 
