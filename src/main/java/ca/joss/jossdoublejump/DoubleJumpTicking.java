@@ -31,6 +31,7 @@ import com.hypixel.hytale.server.core.modules.time.TimeResource;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.PlayerUtil;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Locale;
@@ -52,6 +53,8 @@ final class DoubleJumpTicking {
 
     /** Per concrete PlayerInput class: no-arg boolean accessor for raw jump pressed. */
     private static final ConcurrentHashMap<Class<?>, Optional<Method>> RAW_JUMP_GETTERS = new ConcurrentHashMap<>();
+    /** Per concrete PlayerInput class: boolean field that represents raw jump pressed, or empty if none. */
+    private static final ConcurrentHashMap<Class<?>, Optional<Field>> RAW_JUMP_FIELDS = new ConcurrentHashMap<>();
 
     private static final String[] RAW_JUMP_METHOD_NAMES = {
         "isJumpPressed",
@@ -85,13 +88,25 @@ final class DoubleJumpTicking {
             return null;
         }
         Method m = rawJumpGetterForClass(input.getClass());
-        if (m == null) {
+        if (m != null) {
+            try {
+                Object r = m.invoke(input);
+                return r instanceof Boolean ? (Boolean) r : null;
+            } catch (ReflectiveOperationException ignored) {
+                // Fall through to field probe.
+            }
+        }
+        Field f = rawJumpFieldForClass(input.getClass());
+        if (f == null) {
             return null;
         }
         try {
-            Object r = m.invoke(input);
-            return r instanceof Boolean ? (Boolean) r : null;
-        } catch (ReflectiveOperationException ignored) {
+            Object v = f.get(input);
+            if (v instanceof Boolean) {
+                return (Boolean) v;
+            }
+            return null;
+        } catch (IllegalAccessException ignored) {
             return null;
         }
     }
@@ -105,6 +120,39 @@ final class DoubleJumpTicking {
         Method found = findRawJumpGetter(c);
         RAW_JUMP_GETTERS.put(c, Optional.ofNullable(found));
         return found;
+    }
+
+    @Nullable
+    private static Field rawJumpFieldForClass(Class<?> c) {
+        Optional<Field> cached = RAW_JUMP_FIELDS.get(c);
+        if (cached != null) {
+            return cached.orElse(null);
+        }
+        Field found = findRawJumpField(c);
+        RAW_JUMP_FIELDS.put(c, Optional.ofNullable(found));
+        return found;
+    }
+
+    @Nullable
+    private static Field findRawJumpField(Class<?> start) {
+        for (Class<?> c = start; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Field f : c.getDeclaredFields()) {
+                Class<?> t = f.getType();
+                if (t != boolean.class && t != Boolean.class) {
+                    continue;
+                }
+                String n = f.getName().toLowerCase(Locale.ROOT);
+                if (!n.contains("jump")) {
+                    continue;
+                }
+                if (!(n.contains("press") || n.contains("down") || n.contains("held"))) {
+                    continue;
+                }
+                f.setAccessible(true);
+                return f;
+            }
+        }
+        return null;
     }
 
     @Nullable
