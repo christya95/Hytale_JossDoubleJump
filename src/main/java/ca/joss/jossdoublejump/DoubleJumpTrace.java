@@ -27,4 +27,11 @@ final class DoubleJumpTrace {
             ((HytaleLogger.Api) LOG.atInfo()).log("[DJ trace %s] %s", USERNAME, message);
         }
     }
+
+    /** One-time raw reflection candidate dump; fine level so default logs stay quiet once the probe works. */
+    static void logRawProbe(Ref<EntityStore> ref, CommandBuffer<EntityStore> cmd, String message) {
+        if (is(ref, cmd)) {
+            ((HytaleLogger.Api) LOG.atFine()).log("[DJ trace %s] %s", USERNAME, message);
+        }
+    }
 }

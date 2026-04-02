@@ -56,6 +56,10 @@ final class DoubleJumpTicking {
     private static final ConcurrentHashMap<Class<?>, Optional<Method>> RAW_JUMP_GETTERS = new ConcurrentHashMap<>();
     /** Per concrete PlayerInput class: boolean field that represents raw jump pressed, or empty if none. */
     private static final ConcurrentHashMap<Class<?>, Optional<Field>> RAW_JUMP_FIELDS = new ConcurrentHashMap<>();
+    /** Per class: no-arg method returning {@link MovementStates} (client/input buffer), read {@code .jumping}. */
+    private static final ConcurrentHashMap<Class<?>, Optional<Method>> RAW_MS_GETTERS = new ConcurrentHashMap<>();
+    /** Per class: field of type {@link MovementStates} holding latest client/input movement. */
+    private static final ConcurrentHashMap<Class<?>, Optional<Field>> RAW_MS_FIELDS = new ConcurrentHashMap<>();
     /** Debug: ensure we only dump reflection candidates once per class. */
     private static final ConcurrentHashMap<Class<?>, Boolean> RAW_JUMP_DEBUG_DUMPED = new ConcurrentHashMap<>();
 
@@ -73,6 +77,16 @@ final class DoubleJumpTicking {
         "isJumping",
         "getJumping",
         "jumping"
+    };
+
+    /** Try in order; some builds expose input buffer only via a MovementStates getter. */
+    private static final String[] RAW_MS_GETTER_NAMES = {
+        "getRawMovementStates",
+        "getClientMovementStates",
+        "getPendingMovementStates",
+        "getInputMovementStates",
+        "getQueuedMovementStates",
+        "getMovementStates"
     };
 
     private DoubleJumpTicking() {}
@@ -94,23 +108,63 @@ final class DoubleJumpTicking {
         if (input == null) {
             return null;
         }
-        Method m = rawJumpGetterForClass(input.getClass());
+        Class<?> cls = input.getClass();
+        Method m = rawJumpGetterForClass(cls);
         if (m != null) {
             try {
                 Object r = m.invoke(input);
-                return r instanceof Boolean ? (Boolean) r : null;
+                if (r instanceof Boolean) {
+                    return (Boolean) r;
+                }
             } catch (ReflectiveOperationException ignored) {
-                // Fall through to field probe.
+                // Fall through.
             }
         }
-        Field f = rawJumpFieldForClass(input.getClass());
-        if (f == null) {
+        Field boolF = rawJumpFieldForClass(cls);
+        if (boolF != null) {
+            try {
+                Object v = boolF.get(input);
+                if (v instanceof Boolean) {
+                    return (Boolean) v;
+                }
+            } catch (IllegalAccessException ignored) {
+                // Fall through.
+            }
+        }
+        Boolean fromMsGetter = rawJumpingFromMovementStatesGetter(input);
+        if (fromMsGetter != null) {
+            return fromMsGetter;
+        }
+        return rawJumpingFromMovementStatesField(input);
+    }
+
+    @Nullable
+    private static Boolean rawJumpingFromMovementStatesGetter(PlayerInput input) {
+        Method gm = rawMsGetterForClass(input.getClass());
+        if (gm == null) {
             return null;
         }
         try {
-            Object v = f.get(input);
-            if (v instanceof Boolean) {
-                return (Boolean) v;
+            Object o = gm.invoke(input);
+            if (o instanceof MovementStates ms) {
+                return ms.jumping;
+            }
+            return null;
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
+    }
+
+    @Nullable
+    private static Boolean rawJumpingFromMovementStatesField(PlayerInput input) {
+        Field mf = rawMsFieldForClass(input.getClass());
+        if (mf == null) {
+            return null;
+        }
+        try {
+            Object o = mf.get(input);
+            if (o instanceof MovementStates ms) {
+                return ms.jumping;
             }
             return null;
         } catch (IllegalAccessException ignored) {
@@ -174,7 +228,7 @@ final class DoubleJumpTicking {
             methods.append(m.getName());
         }
 
-        DoubleJumpTrace.log(
+        DoubleJumpTrace.logRawProbe(
             ref,
             cmd,
             "rawProbe: no raw jump accessor found on " + c.getName()
@@ -205,6 +259,28 @@ final class DoubleJumpTicking {
     }
 
     @Nullable
+    private static Method rawMsGetterForClass(Class<?> c) {
+        Optional<Method> cached = RAW_MS_GETTERS.get(c);
+        if (cached != null) {
+            return cached.orElse(null);
+        }
+        Method found = findRawMovementStatesGetter(c);
+        RAW_MS_GETTERS.put(c, Optional.ofNullable(found));
+        return found;
+    }
+
+    @Nullable
+    private static Field rawMsFieldForClass(Class<?> c) {
+        Optional<Field> cached = RAW_MS_FIELDS.get(c);
+        if (cached != null) {
+            return cached.orElse(null);
+        }
+        Field found = findRawMovementStatesField(c);
+        RAW_MS_FIELDS.put(c, Optional.ofNullable(found));
+        return found;
+    }
+
+    @Nullable
     private static Field findRawJumpField(Class<?> start) {
         Field best = null;
         int bestScore = -1;
@@ -223,6 +299,9 @@ final class DoubleJumpTicking {
                 }
                 // Prefer more explicit names, but accept any jump boolean if it's all we have.
                 int score = 0;
+                if (n.contains("pressed") && (n.contains("key") || n.contains("input"))) {
+                    score += 5;
+                }
                 if (n.contains("press") || n.contains("down") || n.contains("held")) {
                     score += 3;
                 }
@@ -245,8 +324,75 @@ final class DoubleJumpTicking {
     }
 
     @Nullable
+    private static Field findRawMovementStatesField(Class<?> start) {
+        Field best = null;
+        int bestScore = Integer.MIN_VALUE;
+        for (Class<?> c = start; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Field f : c.getDeclaredFields()) {
+                if (Modifier.isStatic(f.getModifiers())) {
+                    continue;
+                }
+                if (!MovementStates.class.isAssignableFrom(f.getType())) {
+                    continue;
+                }
+                String n = f.getName().toLowerCase(Locale.ROOT);
+                int score = 0;
+                if (n.contains("raw") || n.contains("client") || n.contains("input") || n.contains("pending") || n.contains("desired")) {
+                    score += 5;
+                }
+                if (n.contains("queued") || n.contains("next")) {
+                    score += 4;
+                }
+                if (n.contains("movement")) {
+                    score += 2;
+                }
+                if (n.contains("state")) {
+                    score += 1;
+                }
+                if (n.contains("previous") || (n.contains("last") && n.contains("applied"))) {
+                    score -= 3;
+                }
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = f;
+                }
+            }
+        }
+        if (best != null) {
+            best.setAccessible(true);
+        }
+        return best;
+    }
+
+    @Nullable
+    private static Method findRawMovementStatesGetter(Class<?> start) {
+        for (String name : RAW_MS_GETTER_NAMES) {
+            try {
+                Method m = start.getMethod(name);
+                if (m.getParameterCount() == 0 && MovementStates.class.isAssignableFrom(m.getReturnType())) {
+                    return m;
+                }
+            } catch (NoSuchMethodException ignored) {
+            }
+        }
+        for (Class<?> k = start; k != null && k != Object.class; k = k.getSuperclass()) {
+            for (String name : RAW_MS_GETTER_NAMES) {
+                try {
+                    Method m = k.getDeclaredMethod(name);
+                    if (m.getParameterCount() == 0 && MovementStates.class.isAssignableFrom(m.getReturnType())) {
+                        m.setAccessible(true);
+                        return m;
+                    }
+                } catch (NoSuchMethodException ignored) {
+                }
+            }
+        }
+        return null;
+    }
+
+    @Nullable
     private static Method findRawJumpGetter(Class<?> c) {
-        // Prefer explicit names first.
+        // Prefer explicit names first (public, then declared).
         for (String name : RAW_JUMP_METHOD_NAMES) {
             try {
                 Method m = c.getMethod(name);
@@ -256,7 +402,19 @@ final class DoubleJumpTicking {
             } catch (NoSuchMethodException ignored) {
             }
         }
-        // Fallback: any public no-arg boolean method with both "jump" and ("press"/"down"/"held") in its name.
+        for (Class<?> k = c; k != null && k != Object.class; k = k.getSuperclass()) {
+            for (String name : RAW_JUMP_METHOD_NAMES) {
+                try {
+                    Method m = k.getDeclaredMethod(name);
+                    if (m.getParameterCount() == 0 && (m.getReturnType() == boolean.class || m.getReturnType() == Boolean.class)) {
+                        m.setAccessible(true);
+                        return m;
+                    }
+                } catch (NoSuchMethodException | SecurityException ignored) {
+                }
+            }
+        }
+        // Fallback: any public no-arg boolean method with both "jump" and ("press"/"down"/"held"/"jumping") in its name.
         for (Method m : c.getMethods()) {
             if (m.getParameterCount() != 0) {
                 continue;
@@ -269,8 +427,31 @@ final class DoubleJumpTicking {
             if (!n.contains("jump")) {
                 continue;
             }
-            if (n.contains("press") || n.contains("down") || n.contains("held")) {
+            if (n.contains("press") || n.contains("down") || n.contains("held") || n.contains("jumping")) {
                 return m;
+            }
+        }
+        for (Class<?> k = c; k != null && k != Object.class; k = k.getSuperclass()) {
+            for (Method m : k.getDeclaredMethods()) {
+                if (m.getParameterCount() != 0) {
+                    continue;
+                }
+                Class<?> rt = m.getReturnType();
+                if (rt != boolean.class && rt != Boolean.class) {
+                    continue;
+                }
+                String n = m.getName().toLowerCase(Locale.ROOT);
+                if (!n.contains("jump")) {
+                    continue;
+                }
+                if (n.contains("press") || n.contains("down") || n.contains("held") || n.contains("jumping")) {
+                    try {
+                        m.setAccessible(true);
+                    } catch (SecurityException ignored) {
+                        continue;
+                    }
+                    return m;
+                }
             }
         }
         return null;
