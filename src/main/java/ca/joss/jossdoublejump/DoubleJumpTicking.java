@@ -763,7 +763,8 @@ final class DoubleJumpTicking {
                 ((TimeResource) cmd.getResource(TimeResource.getResourceType())).getNow().toEpochMilli();
             boolean queueEdge =
                 dj.pendingQueueJumpEdge || (dj.queueJumpEdgeBufferUntilMs != 0L && nowMs < dj.queueJumpEdgeBufferUntilMs);
-            // Choose ONE signal source: raw input if available, else queue-held (SMS) as fallback, else processed state.
+            // Raw input if available; else processed MovementStates.jumping only (not OR'd with jumpHeldLastQueue — that
+            // stuck true and killed edges while st.jumping stayed high). Queue edges still come from pendingQueueJumpEdge.
             Boolean rawJump = rawJumpPressedFromInput(input);
             boolean signal;
             String src;
@@ -772,9 +773,10 @@ final class DoubleJumpTicking {
                 src = "raw";
             } else {
                 maybeDumpRawJumpCandidates(ref, cmd, input);
-                signal = dj.jumpHeldLastQueue || st.jumping;
+                signal = st.jumping;
                 src = "fallback";
             }
+            // Rising edge: signal went false→true since last tick (detects brief taps when st.jumping pulses).
             boolean edge = signal && !dj.jumpSignalLast;
 
             // Input FSM transitions.
@@ -825,7 +827,7 @@ final class DoubleJumpTicking {
 
             dj.pendingQueueJumpEdge = false;
             dj.jumpSignalLast = signal;
-            dj.jumpHeldLastQueue = dj.jumpHeldLastQueue || st.jumping;
+            // jumpHeldLastQueue is maintained only by QueueScannerSystem (SMS queue walk); do not OR with st.jumping here.
         }
     }
 }
