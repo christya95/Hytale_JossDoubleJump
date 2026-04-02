@@ -778,6 +778,10 @@ final class DoubleJumpTicking {
             }
             // Rising edge: signal went false→true since last tick (detects brief taps when st.jumping pulses).
             boolean edge = signal && !dj.jumpSignalLast;
+            // After a release (WAITING_FOR_PRESS), any jump signal counts as a new press — does not require st.jumping
+            // to pulse false for a tick while still held from the first jump.
+            boolean pressFromWaiting =
+                dj.inputState == DoubleJumpComponent.InputState.WAITING_FOR_PRESS && signal;
 
             // Input FSM transitions.
             if (dj.inputState == DoubleJumpComponent.InputState.COOLDOWN_FRAMES) {
@@ -793,19 +797,21 @@ final class DoubleJumpTicking {
                 dj.inputState = DoubleJumpComponent.InputState.WAITING_FOR_PRESS;
             }
 
+            boolean requestSecondJump = pressFromWaiting || edge;
+            // Do not enter input cooldown on liftoff tick (WAITING + held jump is normal first jump, not mod double).
+            if (requestSecondJump && !liftoffTick) {
+                dj.inputState = DoubleJumpComponent.InputState.COOLDOWN_FRAMES;
+                dj.inputCooldownFramesRemaining = INPUT_DEBOUNCE_FRAMES;
+            }
+
             DoubleJumpTrace.log(
                 ref,
                 cmd,
                 "afterInput: phase=" + dj.phase + " charges=" + dj.chargesRemaining + " liftoffTick=" + liftoffTick
-                    + " inputState=" + dj.inputState + " src=" + src + " sig=" + signal + " edge=" + edge + " cd=" + dj.inputCooldownFramesRemaining
+                    + " inputState=" + dj.inputState + " src=" + src + " sig=" + signal + " edge=" + edge + " pfw=" + pressFromWaiting
+                    + " req2=" + requestSecondJump + " cd=" + dj.inputCooldownFramesRemaining
                     + " queueEdge=" + queueEdge
                     + " move(jump=" + st.jumping + ",og=" + st.onGround + ",fluid=" + st.inFluid + ",climb=" + st.climbing + ")");
-
-            boolean requestSecondJump = edge;
-            if (requestSecondJump) {
-                dj.inputState = DoubleJumpComponent.InputState.COOLDOWN_FRAMES;
-                dj.inputCooldownFramesRemaining = INPUT_DEBOUNCE_FRAMES;
-            }
 
             if (DoubleJumpConfig.ActivationMode.from(cfg) == DoubleJumpConfig.ActivationMode.JUMP_KEY
                 && dj.phase == DoubleJumpComponent.Phase.AIR_CAN_DOUBLE
