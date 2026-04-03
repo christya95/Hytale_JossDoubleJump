@@ -33,6 +33,18 @@ public final class DoubleJumpConfig {
     public boolean useJumpKey;
 
     /**
+     * How long a queue-detected jump edge remains consumable in {@link DoubleJumpTicking.AfterInputSystem} (ms).
+     * Raise slightly (e.g. 160–220) if packets are bursty (many mods, Zephyr air movement).
+     */
+    public long queueJumpEdgeBufferMs = 120L;
+
+    /**
+     * Frames of input debounce after a second-jump request. Lower (e.g. 1) if taps feel ignored when spamming; higher
+     * reduces duplicate triggers.
+     */
+    public int inputDebounceFrames = 2;
+
+    /**
      * Informational only (persisted in JSON for operators). Not read by gameplay code. Jump-key detection assumes normal
      * survival-style movement; creative flight and similar modes often use different input and movement state.
      */

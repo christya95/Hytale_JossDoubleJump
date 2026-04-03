@@ -34,6 +34,8 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -41,6 +43,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import ca.joss.jossdoublejump.input.JossQueueJumpTracker;
 import ca.joss.jossdoublejump.util.StatUtil;
 
 /**
@@ -48,9 +51,6 @@ import ca.joss.jossdoublejump.util.StatUtil;
  * the rest via {@link #tryApply}. Raw {@link PlayerInput} is the primary signal; queue SMS held/edge is fallback.
  */
 final class DoubleJumpTicking {
-
-    /** Consume a queue-detected jump edge in AfterInput within this window (ms) if the boolean was cleared same tick. */
-    private static final long QUEUE_JUMP_EDGE_BUFFER_MS = 120L;
 
     /** Per concrete PlayerInput class: no-arg boolean accessor for raw jump pressed. */
     private static final ConcurrentHashMap<Class<?>, Optional<Method>> RAW_JUMP_GETTERS = new ConcurrentHashMap<>();
@@ -62,6 +62,10 @@ final class DoubleJumpTicking {
     private static final ConcurrentHashMap<Class<?>, Optional<Field>> RAW_MS_FIELDS = new ConcurrentHashMap<>();
     /** Debug: ensure we only dump reflection candidates once per class. */
     private static final ConcurrentHashMap<Class<?>, Boolean> RAW_JUMP_DEBUG_DUMPED = new ConcurrentHashMap<>();
+    /** Cached: all instance no-arg methods returning MovementStates (sorted: likely client/pending first). */
+    private static final ConcurrentHashMap<Class<?>, List<Method>> ALL_MS_GETTERS = new ConcurrentHashMap<>();
+    /** Cached: all instance fields of type MovementStates (sorted: likely client/pending first). */
+    private static final ConcurrentHashMap<Class<?>, List<Field>> ALL_MS_FIELDS_SORTED = new ConcurrentHashMap<>();
 
     private static final String[] RAW_JUMP_METHOD_NAMES = {
         "isJumpPressed",
@@ -457,6 +461,111 @@ final class DoubleJumpTicking {
         return null;
     }
 
+    /**
+     * If {@link PlayerInput} exposes a {@link MovementStates} snapshot that disagrees with the applied
+     * {@link MovementStatesComponent} value, return that snapshot's {@code jumping}. This often tracks the client's
+     * pending key before the merged {@code st.jumping} bit drops between rapid taps (when named raw accessors are absent).
+     */
+    @Nullable
+    private static Boolean divergentJumpSignal(@Nonnull PlayerInput input, @Nonnull MovementStates applied) {
+        Class<?> cls = input.getClass();
+        for (Method m : allMsGettersForClass(cls)) {
+            try {
+                Object o = m.invoke(input);
+                if (o instanceof MovementStates ms && ms.jumping != applied.jumping) {
+                    return ms.jumping;
+                }
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }
+        for (Field f : allMsFieldsForClass(cls)) {
+            try {
+                Object o = f.get(input);
+                if (o instanceof MovementStates ms && ms.jumping != applied.jumping) {
+                    return ms.jumping;
+                }
+            } catch (IllegalAccessException ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static List<Method> allMsGettersForClass(Class<?> c) {
+        return ALL_MS_GETTERS.computeIfAbsent(c, DoubleJumpTicking::collectAllMovementStatesMethods);
+    }
+
+    private static List<Field> allMsFieldsForClass(Class<?> c) {
+        return ALL_MS_FIELDS_SORTED.computeIfAbsent(c, DoubleJumpTicking::collectAllMovementStatesFields);
+    }
+
+    private static List<Method> collectAllMovementStatesMethods(Class<?> start) {
+        List<Method> out = new ArrayList<>();
+        for (Class<?> k = start; k != null && k != Object.class; k = k.getSuperclass()) {
+            for (Method m : k.getDeclaredMethods()) {
+                if (Modifier.isStatic(m.getModifiers())) {
+                    continue;
+                }
+                if (m.getParameterCount() != 0) {
+                    continue;
+                }
+                if (!MovementStates.class.isAssignableFrom(m.getReturnType())) {
+                    continue;
+                }
+                try {
+                    m.setAccessible(true);
+                } catch (SecurityException ignored) {
+                    continue;
+                }
+                out.add(m);
+            }
+        }
+        out.sort(Comparator.comparingInt((Method m) -> -movementStatesNameScore(m.getName())));
+        return out;
+    }
+
+    private static List<Field> collectAllMovementStatesFields(Class<?> start) {
+        List<Field> out = new ArrayList<>();
+        for (Class<?> k = start; k != null && k != Object.class; k = k.getSuperclass()) {
+            for (Field f : k.getDeclaredFields()) {
+                if (Modifier.isStatic(f.getModifiers())) {
+                    continue;
+                }
+                if (!MovementStates.class.isAssignableFrom(f.getType())) {
+                    continue;
+                }
+                try {
+                    f.setAccessible(true);
+                } catch (SecurityException ignored) {
+                    continue;
+                }
+                out.add(f);
+            }
+        }
+        out.sort(Comparator.comparingInt((Field f) -> -movementStatesNameScore(f.getName())));
+        return out;
+    }
+
+    private static int movementStatesNameScore(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        int score = 0;
+        if (n.contains("raw") || n.contains("client") || n.contains("input") || n.contains("pending") || n.contains("desired")) {
+            score += 5;
+        }
+        if (n.contains("queued") || n.contains("next")) {
+            score += 4;
+        }
+        if (n.contains("movement")) {
+            score += 2;
+        }
+        if (n.contains("state")) {
+            score += 1;
+        }
+        if (n.contains("previous") || (n.contains("last") && n.contains("applied"))) {
+            score -= 3;
+        }
+        return score;
+    }
+
     static boolean tryApply(
         @Nonnull Ref<EntityStore> ref,
         @Nonnull CommandBuffer<EntityStore> commandBuffer,
@@ -641,6 +750,7 @@ final class DoubleJumpTicking {
 
             long nowMs =
                 ((TimeResource) cmd.getResource(TimeResource.getResourceType())).getNow().toEpochMilli();
+            long edgeBufMs = cfg.queueJumpEdgeBufferMs > 0 ? cfg.queueJumpEdgeBufferMs : 120L;
 
             if (DoubleJumpTrace.is(ref, cmd)) {
                 StringBuilder sb = new StringBuilder(256);
@@ -686,12 +796,12 @@ final class DoubleJumpTicking {
             boolean netEdge = curQJump && !prevQJump;
             if (risingEdge || netEdge) {
                 dj.pendingQueueJumpEdge = true;
-                dj.queueJumpEdgeBufferUntilMs = nowMs + QUEUE_JUMP_EDGE_BUFFER_MS;
+                dj.queueJumpEdgeBufferUntilMs = nowMs + edgeBufMs;
                 DoubleJumpTrace.log(
                     ref,
                     cmd,
                     "queueScan: airborne phase=" + dj.phase + " prevQJump=" + prevQJump + " endQJump=" + curQJump
-                        + " risingEdge=" + risingEdge + " netEdge=" + netEdge + " -> pending+buffer " + QUEUE_JUMP_EDGE_BUFFER_MS + "ms");
+                        + " risingEdge=" + risingEdge + " netEdge=" + netEdge + " -> pending+buffer " + edgeBufMs + "ms");
             } else if (DoubleJumpTrace.is(ref, cmd)) {
                 DoubleJumpTrace.log(
                     ref,
@@ -709,8 +819,6 @@ final class DoubleJumpTicking {
      */
     static final class AfterInputSystem extends EntityTickingSystem<EntityStore> {
         private final ComponentType<EntityStore, DoubleJumpComponent> djType;
-
-        private static final int INPUT_DEBOUNCE_FRAMES = 2;
 
         AfterInputSystem(ComponentType<EntityStore, DoubleJumpComponent> djType) {
             this.djType = djType;
@@ -761,16 +869,28 @@ final class DoubleJumpTicking {
 
             long nowMs =
                 ((TimeResource) cmd.getResource(TimeResource.getResourceType())).getNow().toEpochMilli();
+            boolean mixinSmsEdge = JossQueueJumpTracker.consumeJumpRisingEdge(input);
             boolean queueEdge =
-                dj.pendingQueueJumpEdge || (dj.queueJumpEdgeBufferUntilMs != 0L && nowMs < dj.queueJumpEdgeBufferUntilMs);
-            // Raw input if available; else processed MovementStates.jumping only (not OR'd with jumpHeldLastQueue — that
-            // stuck true and killed edges while st.jumping stayed high). Queue edges still come from pendingQueueJumpEdge.
+                mixinSmsEdge
+                    || dj.pendingQueueJumpEdge
+                    || (dj.queueJumpEdgeBufferUntilMs != 0L && nowMs < dj.queueJumpEdgeBufferUntilMs);
+            int debounceFrames = Math.max(1, cfg.inputDebounceFrames);
+            // Raw input if available; else Hyxin mixin SMS stream; else divergent MovementStates on PlayerInput;
+            // else processed MovementStates.jumping only (not OR'd with jumpHeldLastQueue).
             Boolean rawJump = rawJumpPressedFromInput(input);
+            Boolean mixinSmsJump = JossQueueJumpTracker.lastQueuedJumping(input);
+            Boolean divergent = divergentJumpSignal(input, st);
             boolean signal;
             String src;
             if (rawJump != null) {
                 signal = rawJump;
                 src = "raw";
+            } else if (mixinSmsJump != null) {
+                signal = mixinSmsJump;
+                src = "mixinSms";
+            } else if (divergent != null) {
+                signal = divergent;
+                src = "pendingMs";
             } else {
                 maybeDumpRawJumpCandidates(ref, cmd, input);
                 signal = st.jumping;
@@ -801,7 +921,7 @@ final class DoubleJumpTicking {
             // Do not enter input cooldown on liftoff tick (WAITING + held jump is normal first jump, not mod double).
             if (requestSecondJump && !liftoffTick) {
                 dj.inputState = DoubleJumpComponent.InputState.COOLDOWN_FRAMES;
-                dj.inputCooldownFramesRemaining = INPUT_DEBOUNCE_FRAMES;
+                dj.inputCooldownFramesRemaining = debounceFrames;
             }
 
             DoubleJumpTrace.log(
@@ -810,7 +930,7 @@ final class DoubleJumpTicking {
                 "afterInput: phase=" + dj.phase + " charges=" + dj.chargesRemaining + " liftoffTick=" + liftoffTick
                     + " inputState=" + dj.inputState + " src=" + src + " sig=" + signal + " edge=" + edge + " pfw=" + pressFromWaiting
                     + " req2=" + requestSecondJump + " cd=" + dj.inputCooldownFramesRemaining
-                    + " queueEdge=" + queueEdge
+                    + " queueEdge=" + queueEdge + " mixinSmsEdge=" + mixinSmsEdge
                     + " move(jump=" + st.jumping + ",og=" + st.onGround + ",fluid=" + st.inFluid + ",climb=" + st.climbing + ")");
 
             if (DoubleJumpConfig.ActivationMode.from(cfg) == DoubleJumpConfig.ActivationMode.JUMP_KEY

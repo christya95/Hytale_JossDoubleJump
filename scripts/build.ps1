@@ -32,6 +32,7 @@ if (-not $jdkHome) { throw "Missing tools\jdk25\<jdk> (JDK 25). tools\ is gitign
 $javac = Join-Path $jdkHome.FullName "bin\javac.exe"
 $jar = Join-Path $jdkHome.FullName "bin\jar.exe"
 $hy = Join-Path $serverRoot "HytaleServer.jar"
+$hyxinJar = Get-ChildItem -Path (Join-Path $serverRoot "earlyplugins"), (Join-Path $serverRoot "mods") -Filter "Hyxin*.jar" -File -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
 
 $templateJar = @(
   (Join-Path $jossRoot "dist\JossDoubleJump.jar"),
@@ -39,6 +40,9 @@ $templateJar = @(
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if (-not (Test-Path $hy)) { throw "Missing HytaleServer.jar at $hy" }
+if (-not $hyxinJar) {
+  throw "Hyxin JAR not found. Download Hyxin (e.g. Hyxin-0.0.11-all.jar) into server earlyplugins or mods next to HytaleServer.jar - required on classpath for Mixin compile."
+}
 if (-not $templateJar) {
   throw "No JossDoubleJump.jar template. Place dist\JossDoubleJump.jar or mods\JossDoubleJump.jar (run scripts\repack-jar.ps1 first if you have no JAR yet)."
 }
@@ -52,7 +56,7 @@ Push-Location $workDir
 & $jar xf $templateJar
 Pop-Location
 
-$cp = "$hy;$templateJar"
+$cp = "$hy;$templateJar;$hyxinJar"
 $javaFiles = Get-ChildItem -Path $sourcesDir -Recurse -Filter "*.java" | ForEach-Object { $_.FullName }
 & $javac -encoding UTF-8 -cp $cp -d $outClasses @javaFiles
 if ($LASTEXITCODE -ne 0) { throw "javac failed ($LASTEXITCODE)." }
@@ -69,6 +73,7 @@ Get-ChildItem -Path $outClasses -Recurse -File | ForEach-Object {
 
 Copy-Item -Force (Join-Path $assetsDir "double_jump_defaults.json") $workDir
 Copy-Item -Force (Join-Path $assetsDir "manifest.json") $workDir
+Copy-Item -Force (Join-Path $assetsDir "jossdoublejump.mixins.json") $workDir
 
 $outJar = Join-Path $jossRoot "dist\JossDoubleJump.jar"
 New-Item -ItemType Directory -Force -Path (Split-Path $outJar -Parent) | Out-Null

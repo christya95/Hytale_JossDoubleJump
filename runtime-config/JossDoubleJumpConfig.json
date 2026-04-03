@@ -11,5 +11,7 @@
   "useAbility2": false,
   "useAbility3": false,
   "useJumpKey": true,
-  "usageNote": "Informational: jumpCharges=2 means one charge consumed at liftoff and one left for the mod air jump (reset on landing). Jump-key mode assumes normal survival movement."
+  "queueJumpEdgeBufferMs": 160,
+  "inputDebounceFrames": 1,
+  "usageNote": "Informational: jumpCharges=2 means one charge consumed at liftoff and one left for the mod air jump (reset on landing). Jump-key mode assumes normal survival movement. If double jump misses when tapping fast, raise queueJumpEdgeBufferMs or verticalBoost slightly; with Zephyr, avoid stacking huge horizontalBoost with dash."
 }

@@ -20,8 +20,10 @@ if (-not $templateJar) {
 }
 $def = Join-Path $assetsDir "double_jump_defaults.json"
 $mft = Join-Path $assetsDir "manifest.json"
+$mix = Join-Path $assetsDir "jossdoublejump.mixins.json"
 if (-not (Test-Path $def)) { throw "Missing: $def" }
 if (-not (Test-Path $mft)) { throw "Missing: $mft" }
+if (-not (Test-Path $mix)) { throw "Missing: $mix" }
 
 Remove-Item -Recurse -Force $workDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $workDir | Out-Null
@@ -34,6 +36,7 @@ try {
 
 Copy-Item -Force $def (Join-Path $workDir "double_jump_defaults.json")
 Copy-Item -Force $mft (Join-Path $workDir "manifest.json")
+Copy-Item -Force $mix (Join-Path $workDir "jossdoublejump.mixins.json")
 
 $outJar = Join-Path $jossRoot "dist\JossDoubleJump.jar"
 New-Item -ItemType Directory -Force -Path (Split-Path $outJar -Parent) | Out-Null
