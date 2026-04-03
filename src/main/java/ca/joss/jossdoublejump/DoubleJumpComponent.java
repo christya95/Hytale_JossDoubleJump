@@ -36,7 +36,10 @@ public class DoubleJumpComponent implements Component<EntityStore> {
      */
     InputState inputState = InputState.WAITING_FOR_PRESS;
 
-    /** Last sampled jump signal (from raw input when available; else fallback). */
+    /**
+     * Previous tick's <strong>unmasked</strong> jump {@code signal} (see {@link ca.joss.jossdoublejump.DoubleJumpTicking.AfterInputSystem}).
+     * Used only for rising-edge detection; must not follow the post-liftoff mask or a held key looks like a new press when the mask ends.
+     */
     boolean jumpSignalLast;
 
     /** Remaining debounce frames when {@link #inputState} is {@link InputState#COOLDOWN_FRAMES}. */

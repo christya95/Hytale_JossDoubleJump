@@ -2,6 +2,12 @@
 
 Short log (max three bullets per version). Newest first.
 
+## 0.3.6 (2026-04-03)
+
+- **Post-liftoff mask vs edges:** Rising-edge detection for the mod air jump now uses **unmasked** `signal` and stores **`jumpSignalLast = signal`** each tick — the mask only drives `effectiveSignal` for HELD/WAITING FSM, so a held key no longer looks like a new press when the mask ends (single jump works again).
+- **Optional:** `requireReleaseForDoubleJump` (default false) — when true, an unmasked edge only counts if `inputState == WAITING_FOR_PRESS` (stricter release-then-press).
+- **Docs:** Clarified `postLiftoffJumpSignalIgnoreTicks` as FSM-only; double-jump trigger is edge/queue, not mask expiry.
+
 ## 0.3.5 (2026-04-03)
 
 - **FSM frames:** Tighter defaults — `inputDebounceFrames` default **1** (was 2 in Java default), `postLiftoffJumpSignalIgnoreTicks` **6** (was 5; aligns with tuned scale e.g. 19 → 6; migrate old values with `(old + 1) / 3`).

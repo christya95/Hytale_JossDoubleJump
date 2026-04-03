@@ -45,13 +45,20 @@ public final class DoubleJumpConfig {
     public int inputDebounceFrames = 1;
 
     /**
-     * After leaving the ground, for this many ticks the mod pretends the jump signal is false when it would otherwise use
-     * processed {@code MovementStates.jumping} or queue SMS end-state (both can stay true while the key is held). That
-     * resets the input FSM to {@link DoubleJumpComponent.InputState#WAITING_FOR_PRESS} so a held jump still registers as a
-     * new press when the mask ends, or a tap produces a clean edge. Ignored when raw or divergent pending-MS signals are used.
-     * Default 6 matches post-tuning scale (e.g. legacy ~19 ticks → 6). To migrate old tick counts: {@code (old + 1) / 3}.
+     * After leaving the ground, for this many ticks the mod pretends the jump signal is false for the <strong>input FSM
+     * only</strong> ({@code effectiveSignal}) when using fallback or queue SMS paths — so HELD can become WAITING while
+     * the key is still physically held. Double-jump detection uses <strong>unmasked</strong> {@code signal} for edges, so
+     * this mask does not trigger a second jump when it expires. Ignored for raw or divergent pending-MS. To migrate old
+     * tick counts: {@code (old + 1) / 3}.
      */
     public int postLiftoffJumpSignalIgnoreTicks = 6;
+
+    /**
+     * If true, a mod air jump requires {@link DoubleJumpComponent.InputState#WAITING_FOR_PRESS} and an unmasked rising edge
+     * (release then press). If false, any unmasked false→true jump edge qualifies. Default false: the post-liftoff mask
+     * only affects {@code effectiveSignal} for the input FSM, not edge detection (which uses unmasked {@code signal}).
+     */
+    public boolean requireReleaseForDoubleJump;
 
     /**
      * Informational only (persisted in JSON for operators). Not read by gameplay code. Jump-key detection assumes normal

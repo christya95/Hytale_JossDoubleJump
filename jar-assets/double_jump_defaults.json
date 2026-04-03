@@ -15,5 +15,6 @@
   "queueJumpEdgeBufferMs": 220,
   "inputDebounceFrames": 1,
   "postLiftoffJumpSignalIgnoreTicks": 6,
+  "requireReleaseForDoubleJump": false,
   "usageNote": "Informational: jumpCharges=2 means one charge consumed at liftoff and one left for the mod air jump (reset on landing). Jump-key mode assumes normal survival movement. If double jump misses when tapping fast, raise queueJumpEdgeBufferMs or verticalBoost slightly; with Zephyr, avoid stacking huge horizontalBoost with dash."
 }
