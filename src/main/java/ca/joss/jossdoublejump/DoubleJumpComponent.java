@@ -51,6 +51,13 @@ public class DoubleJumpComponent implements Component<EntityStore> {
     boolean jumpHeldLastQueue;
 
     /**
+     * True if {@link PlayerInput#getMovementUpdateQueue()} contained at least one {@link PlayerInput.SetMovementStates}
+     * this tick — used so {@link ca.joss.jossdoublejump.mixin.PlayerInputQueueMixin}'s jump bit is not mistaken for
+     * authoritative when the queue was all velocity/look packets (Zephyr spam).
+     */
+    boolean movementQueueHadSms;
+
+    /**
      * Set when the queue walk sees a jump rising edge; optional time buffer extends consumption into {@link DoubleJumpTicking.AfterInputSystem}.
      */
     boolean pendingQueueJumpEdge;
@@ -69,6 +76,7 @@ public class DoubleJumpComponent implements Component<EntityStore> {
         c.jumpSignalLast = this.jumpSignalLast;
         c.inputCooldownFramesRemaining = this.inputCooldownFramesRemaining;
         c.jumpHeldLastQueue = this.jumpHeldLastQueue;
+        c.movementQueueHadSms = this.movementQueueHadSms;
         c.pendingQueueJumpEdge = this.pendingQueueJumpEdge;
         c.queueJumpEdgeBufferUntilMs = this.queueJumpEdgeBufferUntilMs;
         return c;

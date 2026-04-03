@@ -71,6 +71,10 @@ public class PlayerInputQueueMixin {
 
     @Inject(method = "queue", at = @At("HEAD"))
     private void jossDoubleJump$onInputQueued(PlayerInput.InputUpdate update, CallbackInfo ci) {
-        onMovementUpdateQueued((PlayerInput) (Object) this, update);
+        PlayerInput self = (PlayerInput) (Object) this;
+        // Ensure tracker exists for any queue traffic so rising-edge state is not dropped when the first updates are
+        // non-SMS (common with movement-heavy mods).
+        BY_INPUT.computeIfAbsent(self, k -> new S());
+        onMovementUpdateQueued(self, update);
     }
 }

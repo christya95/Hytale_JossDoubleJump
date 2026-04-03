@@ -80,7 +80,9 @@ final class DoubleJumpTicking {
         // Some implementations just expose “jumping”.
         "isJumping",
         "getJumping",
-        "jumping"
+        "jumping",
+        "wasJumpPressed",
+        "getWasJumpPressed"
     };
 
     /** Try in order; some builds expose input buffer only via a MovementStates getter. */
@@ -683,6 +685,7 @@ final class DoubleJumpTicking {
         dj.pendingQueueJumpEdge = false;
         dj.queueJumpEdgeBufferUntilMs = 0L;
         dj.jumpHeldLastQueue = false;
+        dj.movementQueueHadSms = false;
         dj.inputState = DoubleJumpComponent.InputState.WAITING_FOR_PRESS;
         dj.jumpSignalLast = false;
         dj.inputCooldownFramesRemaining = 0;
@@ -743,6 +746,7 @@ final class DoubleJumpTicking {
                 return;
             }
             dj.pendingQueueJumpEdge = false;
+            dj.movementQueueHadSms = false;
             List<PlayerInput.InputUpdate> queue = input.getMovementUpdateQueue();
             if (queue == null || queue.isEmpty()) {
                 return;
@@ -778,6 +782,7 @@ final class DoubleJumpTicking {
                 if (j == null) {
                     continue;
                 }
+                dj.movementQueueHadSms = true;
                 if (j && !curQJump) {
                     risingEdge = true;
                 }
@@ -885,7 +890,10 @@ final class DoubleJumpTicking {
             if (rawJump != null) {
                 signal = rawJump;
                 src = "raw";
-            } else if (mixinSmsJump != null) {
+            } else if (dj.movementQueueHadSms && mixinSmsJump != null) {
+                // Prefer SMS jump bit only when this tick's queue actually carried SetMovementStates — avoids treating
+                // stale mixin state as input when Zephyr floods non-SMS updates, and fixes src=fallback when SMS exists
+                // but the tracker was never created before the first SMS (mixin init order).
                 signal = mixinSmsJump;
                 src = "mixinSms";
             } else if (divergent != null) {
@@ -930,7 +938,7 @@ final class DoubleJumpTicking {
                 "afterInput: phase=" + dj.phase + " charges=" + dj.chargesRemaining + " liftoffTick=" + liftoffTick
                     + " inputState=" + dj.inputState + " src=" + src + " sig=" + signal + " edge=" + edge + " pfw=" + pressFromWaiting
                     + " req2=" + requestSecondJump + " cd=" + dj.inputCooldownFramesRemaining
-                    + " queueEdge=" + queueEdge + " mixinSmsEdge=" + mixinSmsEdge
+                    + " queueEdge=" + queueEdge + " mixinSmsEdge=" + mixinSmsEdge + " mqSms=" + dj.movementQueueHadSms
                     + " move(jump=" + st.jumping + ",og=" + st.onGround + ",fluid=" + st.inFluid + ",climb=" + st.climbing + ")");
 
             if (DoubleJumpConfig.ActivationMode.from(cfg) == DoubleJumpConfig.ActivationMode.JUMP_KEY
