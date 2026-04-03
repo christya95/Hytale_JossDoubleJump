@@ -69,6 +69,27 @@ public final class DoubleJumpConfig {
     public int tapAssistMinWaitingTicks = 4;
 
     /**
+     * After a real jump release ({@code HELD} with unmasked {@code signal == false}), how many ticks the mod watches
+     * for a second-jump attempt that may not produce a visible {@code SetMovementStates} jump rising edge (short taps,
+     * non-SMS-heavy queues). Set {@code 0} to disable {@link DoubleJumpTicking.AfterInputSystem} “queue burst” second
+     * jump intent.
+     */
+    public int secondPressGraceTicks = 6;
+
+    /**
+     * Within {@link #secondPressGraceTicks}, require at least this many non-{@link com.hypixel.hytale.server.core.modules.entity.player.PlayerInput.SetMovementStates}
+     * queue entries this tick (see {@link ca.joss.jossdoublejump.mixin.PlayerInputQueueMixin}) to treat the tick as a
+     * possible second tap when SMS edges are missing. Raise if you see false positives (e.g. movement-heavy mods).
+     */
+    public int secondJumpMinNonSmsUpdates = 5;
+
+    /**
+     * Same window: minimum total {@link com.hypixel.hytale.server.core.modules.entity.player.PlayerInput#queue} calls
+     * this tick (SMS + non-SMS). Keeps the path from firing on idle frames.
+     */
+    public int secondJumpMinTotalQueueUpdates = 6;
+
+    /**
      * Informational only (persisted in JSON for operators). Not read by gameplay code. Jump-key detection assumes normal
      * survival-style movement; creative flight and similar modes often use different input and movement state.
      */

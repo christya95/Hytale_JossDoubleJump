@@ -20,24 +20,13 @@ public class PlayerInputQueueMixin {
     private static final class S {
         boolean lastSmsJump;
         boolean risingPending;
+        /** Per-tick: total {@link PlayerInput#queue} calls; reset when snapshot in {@link #takeQueueActivitySnapshot}. */
+        int totalQueuedThisTick;
+        /** Per-tick: queue entries that are not {@link PlayerInput.SetMovementStates}. */
+        int nonSmsQueuedThisTick;
     }
 
     private static final Map<PlayerInput, S> BY_INPUT = Collections.synchronizedMap(new WeakHashMap<>());
-
-    /** Called from the inject below; also used by {@link ca.joss.jossdoublejump.DoubleJumpTicking}. */
-    public static void onMovementUpdateQueued(PlayerInput input, PlayerInput.InputUpdate update) {
-        if (!(update instanceof PlayerInput.SetMovementStates sms)) {
-            return;
-        }
-        boolean j = sms.movementStates().jumping;
-        S s = BY_INPUT.computeIfAbsent(input, k -> new S());
-        synchronized (s) {
-            if (j && !s.lastSmsJump) {
-                s.risingPending = true;
-            }
-            s.lastSmsJump = j;
-        }
-    }
 
     public static Boolean lastQueuedJumping(PlayerInput input) {
         if (input == null) {
@@ -69,12 +58,46 @@ public class PlayerInputQueueMixin {
         }
     }
 
+    /**
+     * Returns queue activity since the last snapshot, then clears counters. Call once per tick from
+     * {@link ca.joss.jossdoublejump.DoubleJumpTicking.QueueScannerSystem} before {@code st.jumping} is used — captures
+     * traffic that may not include a {@link PlayerInput.SetMovementStates} jump rising edge (short second taps).
+     *
+     * @param outTotalNonSms output {@code [0] = total queue calls, [1] = non-SMS queue calls}
+     */
+    public static void takeQueueActivitySnapshot(PlayerInput input, int[] outTotalNonSms) {
+        if (input == null || outTotalNonSms == null || outTotalNonSms.length < 2) {
+            return;
+        }
+        S s = BY_INPUT.get(input);
+        if (s == null) {
+            outTotalNonSms[0] = 0;
+            outTotalNonSms[1] = 0;
+            return;
+        }
+        synchronized (s) {
+            outTotalNonSms[0] = s.totalQueuedThisTick;
+            outTotalNonSms[1] = s.nonSmsQueuedThisTick;
+            s.totalQueuedThisTick = 0;
+            s.nonSmsQueuedThisTick = 0;
+        }
+    }
+
     @Inject(method = "queue", at = @At("HEAD"))
     private void jossDoubleJump$onInputQueued(PlayerInput.InputUpdate update, CallbackInfo ci) {
         PlayerInput self = (PlayerInput) (Object) this;
-        // Ensure tracker exists for any queue traffic so rising-edge state is not dropped when the first updates are
-        // non-SMS (common with movement-heavy mods).
-        BY_INPUT.computeIfAbsent(self, k -> new S());
-        onMovementUpdateQueued(self, update);
+        S s = BY_INPUT.computeIfAbsent(self, k -> new S());
+        synchronized (s) {
+            s.totalQueuedThisTick++;
+            if (!(update instanceof PlayerInput.SetMovementStates sms)) {
+                s.nonSmsQueuedThisTick++;
+            } else {
+                boolean j = sms.movementStates().jumping;
+                if (j && !s.lastSmsJump) {
+                    s.risingPending = true;
+                }
+                s.lastSmsJump = j;
+            }
+        }
     }
 }

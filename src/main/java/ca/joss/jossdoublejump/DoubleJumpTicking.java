@@ -713,6 +713,10 @@ final class DoubleJumpTicking {
         dj.ticksWaitingForSecondJump = 0;
         dj.sawSignalLowWhileWaiting = false;
         dj.tapAssistConsumedThisAirborne = false;
+        dj.secondJumpSyntheticConsumedThisAirborne = false;
+        dj.secondPressGraceTicksRemaining = 0;
+        dj.totalQueueUpdatesThisTick = 0;
+        dj.nonSmsQueueUpdatesThisTick = 0;
         dj.inputCooldownFramesRemaining = 0;
         dj.chargesRemaining = cfg != null && !cfg.infiniteDoubleJump ? cfg.totalJumpCharges() : 0;
     }
@@ -770,6 +774,10 @@ final class DoubleJumpTicking {
             if (dj == null || msc == null || input == null) {
                 return;
             }
+            int[] queueAct = new int[2];
+            PlayerInputQueueMixin.takeQueueActivitySnapshot(input, queueAct);
+            dj.totalQueueUpdatesThisTick = queueAct[0];
+            dj.nonSmsQueueUpdatesThisTick = queueAct[1];
             dj.pendingQueueJumpEdge = false;
             dj.movementQueueHadSms = false;
             List<PlayerInput.InputUpdate> queue = input.getMovementUpdateQueue();
@@ -975,6 +983,31 @@ final class DoubleJumpTicking {
                     && !dj.tapAssistConsumedThisAirborne
                     && !edge;
 
+            // Re-arm grace on real release (unmasked signal low while previously HELD).
+            if (inputStateAtTickStart == DoubleJumpComponent.InputState.HELD && !signal) {
+                int g = Math.max(0, cfg.secondPressGraceTicks);
+                if (g > 0) {
+                    dj.secondPressGraceTicksRemaining = g;
+                }
+            }
+
+            // Second tap sometimes never produces SetMovementStates jumping rising edges when the queue is mostly
+            // non-SMS. After grace is armed from a release, allow one mod air jump from queue-burst heuristics.
+            int minNonSms = Math.max(1, cfg.secondJumpMinNonSmsUpdates);
+            int minTotalQ = Math.max(1, cfg.secondJumpMinTotalQueueUpdates);
+            boolean syntheticSecondJumpIntent =
+                cfg.secondPressGraceTicks > 0
+                    && !liftoffTick
+                    && canDoubleThisAir
+                    && inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS
+                    && !edge
+                    && !queueEdge
+                    && !dj.jumpHeldLastQueue
+                    && dj.secondPressGraceTicksRemaining > 0
+                    && !dj.secondJumpSyntheticConsumedThisAirborne
+                    && dj.nonSmsQueueUpdatesThisTick >= minNonSms
+                    && dj.totalQueueUpdatesThisTick >= minTotalQ;
+
             // Input FSM transitions.
             if (dj.inputState == DoubleJumpComponent.InputState.COOLDOWN_FRAMES) {
                 if (dj.inputCooldownFramesRemaining > 0) {
@@ -994,7 +1027,7 @@ final class DoubleJumpTicking {
                 edge
                     && (!cfg.requireReleaseForDoubleJump
                         || inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS);
-            boolean requestSecondJump = requestFromEdge || tapAssist;
+            boolean requestSecondJump = requestFromEdge || tapAssist || syntheticSecondJumpIntent;
             // Do not enter input cooldown on liftoff tick (WAITING + held jump is normal first jump, not mod double).
             if (requestSecondJump && !liftoffTick) {
                 dj.inputState = DoubleJumpComponent.InputState.COOLDOWN_FRAMES;
@@ -1011,7 +1044,9 @@ final class DoubleJumpTicking {
                 "afterInput: phase=" + dj.phase + " charges=" + dj.chargesRemaining + " liftoffTick=" + liftoffTick
                     + " inputState=" + dj.inputState + " was=" + inputStateAtTickStart + " src=" + src + " sig=" + signal
                     + " effSig=" + effectiveSignal + " mask=" + postLiftoffMask + " edge=" + edge + " tapA=" + tapAssist
-                    + " tw=" + dj.ticksWaitingForSecondJump + " sawLo=" + dj.sawSignalLowWhileWaiting + " rel="
+                    + " synthI=" + syntheticSecondJumpIntent + " grace=" + dj.secondPressGraceTicksRemaining + " qTot="
+                    + dj.totalQueueUpdatesThisTick + " qNonSms=" + dj.nonSmsQueueUpdatesThisTick + " tw="
+                    + dj.ticksWaitingForSecondJump + " sawLo=" + dj.sawSignalLowWhileWaiting + " rel="
                     + cfg.requireReleaseForDoubleJump + " req2=" + requestSecondJump + " cd="
                     + dj.inputCooldownFramesRemaining + " queueEdge=" + queueEdge + " mixinSmsEdge=" + mixinSmsEdge
                     + " mqSms=" + dj.movementQueueHadSms + " move(jump=" + st.jumping + ",og=" + st.onGround + ",fluid="
@@ -1027,6 +1062,9 @@ final class DoubleJumpTicking {
                     if (tapAssist) {
                         dj.tapAssistConsumedThisAirborne = true;
                     }
+                    if (syntheticSecondJumpIntent) {
+                        dj.secondJumpSyntheticConsumedThisAirborne = true;
+                    }
                 }
             }
 
@@ -1041,6 +1079,11 @@ final class DoubleJumpTicking {
             dj.pendingQueueJumpEdge = false;
             dj.rawSignalLast = signal;
             // jumpHeldLastQueue is maintained only by QueueScannerSystem (SMS queue walk); do not OR with st.jumping here.
+
+            if (dj.secondPressGraceTicksRemaining > 0
+                && inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS) {
+                dj.secondPressGraceTicksRemaining--;
+            }
         }
     }
 }

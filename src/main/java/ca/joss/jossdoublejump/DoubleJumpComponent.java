@@ -53,6 +53,24 @@ public class DoubleJumpComponent implements Component<EntityStore> {
     /** After a successful mod jump via tap assist (infinite mode); blocks a second tap assist in the same airborne period. */
     boolean tapAssistConsumedThisAirborne;
 
+    /** After {@link DoubleJumpTicking.AfterInputSystem} “queue burst” second jump; one per airborne period. */
+    boolean secondJumpSyntheticConsumedThisAirborne;
+
+    /**
+     * Ticks left to accept a queue-burst second jump after {@link InputState#HELD} with unmasked {@code signal == false}
+     * (real release). See {@link DoubleJumpConfig#secondPressGraceTicks}.
+     */
+    int secondPressGraceTicksRemaining;
+
+    /**
+     * Snapshot from {@link ca.joss.jossdoublejump.mixin.PlayerInputQueueMixin#takeQueueActivitySnapshot} for this tick
+     * (before queue walk).
+     */
+    int totalQueueUpdatesThisTick;
+
+    /** Non-SMS queue entries this tick (companion to {@link #totalQueueUpdatesThisTick}). */
+    int nonSmsQueueUpdatesThisTick;
+
     /** Remaining debounce frames when {@link #inputState} is {@link InputState#COOLDOWN_FRAMES}. */
     int inputCooldownFramesRemaining;
 
@@ -98,6 +116,10 @@ public class DoubleJumpComponent implements Component<EntityStore> {
         c.ticksWaitingForSecondJump = this.ticksWaitingForSecondJump;
         c.sawSignalLowWhileWaiting = this.sawSignalLowWhileWaiting;
         c.tapAssistConsumedThisAirborne = this.tapAssistConsumedThisAirborne;
+        c.secondJumpSyntheticConsumedThisAirborne = this.secondJumpSyntheticConsumedThisAirborne;
+        c.secondPressGraceTicksRemaining = this.secondPressGraceTicksRemaining;
+        c.totalQueueUpdatesThisTick = this.totalQueueUpdatesThisTick;
+        c.nonSmsQueueUpdatesThisTick = this.nonSmsQueueUpdatesThisTick;
         c.inputCooldownFramesRemaining = this.inputCooldownFramesRemaining;
         c.jumpHeldLastQueue = this.jumpHeldLastQueue;
         c.movementQueueHadSms = this.movementQueueHadSms;
