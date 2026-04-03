@@ -51,7 +51,7 @@ public final class DoubleJumpConfig {
      * this mask does not trigger a second jump when it expires. Ignored for raw or divergent pending-MS. To migrate old
      * tick counts: {@code (old + 1) / 3}.
      */
-    public int postLiftoffJumpSignalIgnoreTicks = 6;
+    public int postLiftoffJumpSignalIgnoreTicks = 10;
 
     /**
      * If true, a mod air jump requires {@link DoubleJumpComponent.InputState#WAITING_FOR_PRESS} and an unmasked rising edge
@@ -59,6 +59,14 @@ public final class DoubleJumpConfig {
      * only affects {@code effectiveSignal} for the input FSM, not edge detection (which uses unmasked {@code signal}).
      */
     public boolean requireReleaseForDoubleJump;
+
+    /**
+     * If &gt; 0: while air can double-jump, in {@link DoubleJumpComponent.InputState#WAITING_FOR_PRESS} at tick start, after
+     * this many consecutive ticks with a seen signal-low since last ground, treat sustained jump signal as a second-jump
+     * request even when {@code st.jumping} never produced a clean edge (fallback stuck high). Set 0 to disable. Requires
+     * {@link #sawSignalLowWhileWaiting} so a full release still happened — does not repeat the pre-0.3.6 mask-expiry bug.
+     */
+    public int tapAssistMinWaitingTicks = 4;
 
     /**
      * Informational only (persisted in JSON for operators). Not read by gameplay code. Jump-key detection assumes normal

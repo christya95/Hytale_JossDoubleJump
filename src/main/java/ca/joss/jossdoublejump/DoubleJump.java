@@ -157,7 +157,10 @@ final class PlayerJoinDoubleJumpAdder extends RefSystem<EntityStore> {
                 doubleJumpComponent.lastDoubleJumpTimeMs = 0L;
                 doubleJumpComponent.phase = DoubleJumpComponent.Phase.GROUNDED;
                 doubleJumpComponent.inputState = DoubleJumpComponent.InputState.WAITING_FOR_PRESS;
-                doubleJumpComponent.jumpSignalLast = false;
+                doubleJumpComponent.rawSignalLast = false;
+                doubleJumpComponent.ticksWaitingForSecondJump = 0;
+                doubleJumpComponent.sawSignalLowWhileWaiting = false;
+                doubleJumpComponent.tapAssistConsumedThisAirborne = false;
                 doubleJumpComponent.inputCooldownFramesRemaining = 0;
                 doubleJumpComponent.jumpHeldLastQueue = false;
                 doubleJumpComponent.chargesRemaining = 0;

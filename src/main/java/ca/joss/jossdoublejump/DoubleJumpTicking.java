@@ -709,7 +709,10 @@ final class DoubleJumpTicking {
         dj.movementQueueHadSms = false;
         dj.postLiftoffSignalMaskTicksRemaining = 0;
         dj.inputState = DoubleJumpComponent.InputState.WAITING_FOR_PRESS;
-        dj.jumpSignalLast = false;
+        dj.rawSignalLast = false;
+        dj.ticksWaitingForSecondJump = 0;
+        dj.sawSignalLowWhileWaiting = false;
+        dj.tapAssistConsumedThisAirborne = false;
         dj.inputCooldownFramesRemaining = 0;
         dj.chargesRemaining = cfg != null && !cfg.infiniteDoubleJump ? cfg.totalJumpCharges() : 0;
     }
@@ -887,6 +890,8 @@ final class DoubleJumpTicking {
                 return;
             }
 
+            DoubleJumpComponent.InputState inputStateAtTickStart = dj.inputState;
+
             boolean liftoffTick = dj.phase == DoubleJumpComponent.Phase.GROUNDED;
             if (!cfg.infiniteDoubleJump && liftoffTick) {
                 dj.chargesRemaining = Math.max(0, dj.chargesRemaining - 1);
@@ -940,8 +945,35 @@ final class DoubleJumpTicking {
                     && ("fallback".equals(src) || "queueSms".equals(src) || "queueSmsLive".equals(src));
             boolean effectiveSignal = postLiftoffMask ? false : signal;
             // Rising edge uses **unmasked** signal vs previous unmasked sample — never effectiveSignal, or the post-liftoff
-            // mask forces jumpSignalLast false while the key is held and the mask end looks like a new press.
-            boolean edge = signal && !dj.jumpSignalLast;
+            // mask would make rawSignalLast track the masked path and break edge semantics.
+            boolean edge = signal && !dj.rawSignalLast;
+
+            boolean canDoubleThisAir =
+                dj.phase == DoubleJumpComponent.Phase.AIR_CAN_DOUBLE
+                    && (cfg.infiniteDoubleJump || dj.chargesRemaining > 0);
+            if (!liftoffTick && canDoubleThisAir && inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS) {
+                dj.ticksWaitingForSecondJump++;
+                if (!signal) {
+                    dj.sawSignalLowWhileWaiting = true;
+                }
+            } else if (!liftoffTick) {
+                dj.ticksWaitingForSecondJump = 0;
+                if (inputStateAtTickStart == DoubleJumpComponent.InputState.HELD) {
+                    dj.sawSignalLowWhileWaiting = false;
+                }
+            }
+
+            boolean tapAssist =
+                cfg.tapAssistMinWaitingTicks > 0
+                    && !liftoffTick
+                    && dj.phase == DoubleJumpComponent.Phase.AIR_CAN_DOUBLE
+                    && (cfg.infiniteDoubleJump || dj.chargesRemaining > 0)
+                    && inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS
+                    && signal
+                    && dj.sawSignalLowWhileWaiting
+                    && dj.ticksWaitingForSecondJump >= cfg.tapAssistMinWaitingTicks
+                    && !dj.tapAssistConsumedThisAirborne
+                    && !edge;
 
             // Input FSM transitions.
             if (dj.inputState == DoubleJumpComponent.InputState.COOLDOWN_FRAMES) {
@@ -958,10 +990,11 @@ final class DoubleJumpTicking {
                 dj.inputState = DoubleJumpComponent.InputState.WAITING_FOR_PRESS;
             }
 
-            boolean requestSecondJump =
+            boolean requestFromEdge =
                 edge
                     && (!cfg.requireReleaseForDoubleJump
-                        || dj.inputState == DoubleJumpComponent.InputState.WAITING_FOR_PRESS);
+                        || inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS);
+            boolean requestSecondJump = requestFromEdge || tapAssist;
             // Do not enter input cooldown on liftoff tick (WAITING + held jump is normal first jump, not mod double).
             if (requestSecondJump && !liftoffTick) {
                 dj.inputState = DoubleJumpComponent.InputState.COOLDOWN_FRAMES;
@@ -976,11 +1009,13 @@ final class DoubleJumpTicking {
                 ref,
                 cmd,
                 "afterInput: phase=" + dj.phase + " charges=" + dj.chargesRemaining + " liftoffTick=" + liftoffTick
-                    + " inputState=" + dj.inputState + " src=" + src + " sig=" + signal + " effSig=" + effectiveSignal
-                    + " mask=" + postLiftoffMask + " edge=" + edge + " rel=" + cfg.requireReleaseForDoubleJump
-                    + " req2=" + requestSecondJump + " cd=" + dj.inputCooldownFramesRemaining
-                    + " queueEdge=" + queueEdge + " mixinSmsEdge=" + mixinSmsEdge + " mqSms=" + dj.movementQueueHadSms
-                    + " move(jump=" + st.jumping + ",og=" + st.onGround + ",fluid=" + st.inFluid + ",climb=" + st.climbing + ")");
+                    + " inputState=" + dj.inputState + " was=" + inputStateAtTickStart + " src=" + src + " sig=" + signal
+                    + " effSig=" + effectiveSignal + " mask=" + postLiftoffMask + " edge=" + edge + " tapA=" + tapAssist
+                    + " tw=" + dj.ticksWaitingForSecondJump + " sawLo=" + dj.sawSignalLowWhileWaiting + " rel="
+                    + cfg.requireReleaseForDoubleJump + " req2=" + requestSecondJump + " cd="
+                    + dj.inputCooldownFramesRemaining + " queueEdge=" + queueEdge + " mixinSmsEdge=" + mixinSmsEdge
+                    + " mqSms=" + dj.movementQueueHadSms + " move(jump=" + st.jumping + ",og=" + st.onGround + ",fluid="
+                    + st.inFluid + ",climb=" + st.climbing + ")");
 
             if (DoubleJumpConfig.ActivationMode.from(cfg) == DoubleJumpConfig.ActivationMode.JUMP_KEY
                 && dj.phase == DoubleJumpComponent.Phase.AIR_CAN_DOUBLE
@@ -989,6 +1024,9 @@ final class DoubleJumpTicking {
                 && (cfg.infiniteDoubleJump || dj.chargesRemaining > 0)) {
                 if (tryApply(ref, cmd, dj, cfg)) {
                     dj.queueJumpEdgeBufferUntilMs = 0L;
+                    if (tapAssist) {
+                        dj.tapAssistConsumedThisAirborne = true;
+                    }
                 }
             }
 
@@ -1001,7 +1039,7 @@ final class DoubleJumpTicking {
             }
 
             dj.pendingQueueJumpEdge = false;
-            dj.jumpSignalLast = signal;
+            dj.rawSignalLast = signal;
             // jumpHeldLastQueue is maintained only by QueueScannerSystem (SMS queue walk); do not OR with st.jumping here.
         }
     }

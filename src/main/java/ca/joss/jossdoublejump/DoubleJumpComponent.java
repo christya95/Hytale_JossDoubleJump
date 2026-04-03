@@ -40,7 +40,18 @@ public class DoubleJumpComponent implements Component<EntityStore> {
      * Previous tick's <strong>unmasked</strong> jump {@code signal} (see {@link ca.joss.jossdoublejump.DoubleJumpTicking.AfterInputSystem}).
      * Used only for rising-edge detection; must not follow the post-liftoff mask or a held key looks like a new press when the mask ends.
      */
-    boolean jumpSignalLast;
+    boolean rawSignalLast;
+
+    /**
+     * Consecutive ticks (while {@link InputState#WAITING_FOR_PRESS} at tick start and air can still double-jump) for tap assist.
+     */
+    int ticksWaitingForSecondJump;
+
+    /** True once the unmasked signal has gone false while {@link #ticksWaitingForSecondJump} was counting (release seen). */
+    boolean sawSignalLowWhileWaiting;
+
+    /** After a successful mod jump via tap assist (infinite mode); blocks a second tap assist in the same airborne period. */
+    boolean tapAssistConsumedThisAirborne;
 
     /** Remaining debounce frames when {@link #inputState} is {@link InputState#COOLDOWN_FRAMES}. */
     int inputCooldownFramesRemaining;
@@ -83,7 +94,10 @@ public class DoubleJumpComponent implements Component<EntityStore> {
         c.chargesRemaining = this.chargesRemaining;
         c.phase = this.phase;
         c.inputState = this.inputState;
-        c.jumpSignalLast = this.jumpSignalLast;
+        c.rawSignalLast = this.rawSignalLast;
+        c.ticksWaitingForSecondJump = this.ticksWaitingForSecondJump;
+        c.sawSignalLowWhileWaiting = this.sawSignalLowWhileWaiting;
+        c.tapAssistConsumedThisAirborne = this.tapAssistConsumedThisAirborne;
         c.inputCooldownFramesRemaining = this.inputCooldownFramesRemaining;
         c.jumpHeldLastQueue = this.jumpHeldLastQueue;
         c.movementQueueHadSms = this.movementQueueHadSms;

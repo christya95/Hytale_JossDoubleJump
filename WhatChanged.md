@@ -2,6 +2,12 @@
 
 Short log (max three bullets per version). Newest first.
 
+## 0.3.7 (2026-04-03)
+
+- **Tap assist:** If `tapAssistMinWaitingTicks` &gt; 0 (default **4**), after a release was seen (`sawSignalLowWhileWaiting`) and the player stays in `WAITING_FOR_PRESS` long enough, a second jump can fire **without** a clean `signal` edge when fallback `st.jumping` stays high — avoids missed double-jumps on fast taps. Gated by `!edge` and one consume per airborne period in infinite mode (`tapAssistConsumedThisAirborne`).
+- **FSM bugfix:** `requireReleaseForDoubleJump` now uses **`inputStateAtTickStart`** (pre-FSM) with the edge check, not post-FSM `inputState` (which was already `HELD` after the same tick’s transition).
+- **Defaults:** `postLiftoffJumpSignalIgnoreTicks` default **10** (was 6); component field **`rawSignalLast`** (renamed from `jumpSignalLast`). Shipped defaults / runtime sample JSON updated; missing keys merge from JAR on load.
+
 ## 0.3.6 (2026-04-03)
 
 - **Post-liftoff mask vs edges:** Rising-edge detection for the mod air jump now uses **unmasked** `signal` and stores **`jumpSignalLast = signal`** each tick — the mask only drives `effectiveSignal` for HELD/WAITING FSM, so a held key no longer looks like a new press when the mask ends (single jump works again).
