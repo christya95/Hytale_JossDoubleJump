@@ -43,7 +43,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import ca.joss.jossdoublejump.input.JossQueueJumpTracker;
+import ca.joss.jossdoublejump.mixin.PlayerInputQueueMixin;
 import ca.joss.jossdoublejump.util.StatUtil;
 
 /**
@@ -869,7 +869,7 @@ final class DoubleJumpTicking {
 
             long nowMs =
                 ((TimeResource) cmd.getResource(TimeResource.getResourceType())).getNow().toEpochMilli();
-            boolean mixinSmsEdge = JossQueueJumpTracker.consumeJumpRisingEdge(input);
+            boolean mixinSmsEdge = PlayerInputQueueMixin.consumeJumpRisingEdge(input);
             boolean queueEdge =
                 mixinSmsEdge
                     || dj.pendingQueueJumpEdge
@@ -878,7 +878,7 @@ final class DoubleJumpTicking {
             // Raw input if available; else Hyxin mixin SMS stream; else divergent MovementStates on PlayerInput;
             // else processed MovementStates.jumping only (not OR'd with jumpHeldLastQueue).
             Boolean rawJump = rawJumpPressedFromInput(input);
-            Boolean mixinSmsJump = JossQueueJumpTracker.lastQueuedJumping(input);
+            Boolean mixinSmsJump = PlayerInputQueueMixin.lastQueuedJumping(input);
             Boolean divergent = divergentJumpSignal(input, st);
             boolean signal;
             String src;
