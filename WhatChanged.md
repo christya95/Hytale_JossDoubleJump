@@ -2,6 +2,12 @@
 
 Short log (max three bullets per version). Newest first.
 
+## 0.3.5 (2026-04-03)
+
+- **FSM frames:** Tighter defaults — `inputDebounceFrames` default **1** (was 2 in Java default), `postLiftoffJumpSignalIgnoreTicks` **6** (was 5; aligns with tuned scale e.g. 19 → 6; migrate old values with `(old + 1) / 3`).
+- **Why:** Shorter debounce and liftoff mask improve jump-spam responsiveness while keeping charge/phase logic unchanged.
+- **Configs:** `jar-assets/double_jump_defaults.json` and `runtime-config/JossDoubleJumpConfig.json` updated to match.
+
 ## 0.3.4 (2026-04-03)
 
 - **queueSmsLive:** After `ProcessPlayerInput`, re-walk the movement queue for the last `SetMovementStates` jump bit so the signal matches post-process state (fixes desync with pre-scan `queueSms`).

@@ -40,17 +40,18 @@ public final class DoubleJumpConfig {
 
     /**
      * Frames of input debounce after a second-jump request. Lower (e.g. 1) if taps feel ignored when spamming; higher
-     * reduces duplicate triggers.
+     * reduces duplicate triggers. Default 1 matches tuned responsiveness (legacy higher values ~4 → 1).
      */
-    public int inputDebounceFrames = 2;
+    public int inputDebounceFrames = 1;
 
     /**
      * After leaving the ground, for this many ticks the mod pretends the jump signal is false when it would otherwise use
      * processed {@code MovementStates.jumping} or queue SMS end-state (both can stay true while the key is held). That
      * resets the input FSM to {@link DoubleJumpComponent.InputState#WAITING_FOR_PRESS} so a held jump still registers as a
      * new press when the mask ends, or a tap produces a clean edge. Ignored when raw or divergent pending-MS signals are used.
+     * Default 6 matches post-tuning scale (e.g. legacy ~19 ticks → 6). To migrate old tick counts: {@code (old + 1) / 3}.
      */
-    public int postLiftoffJumpSignalIgnoreTicks = 5;
+    public int postLiftoffJumpSignalIgnoreTicks = 6;
 
     /**
      * Informational only (persisted in JSON for operators). Not read by gameplay code. Jump-key detection assumes normal
