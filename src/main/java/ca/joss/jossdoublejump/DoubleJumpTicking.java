@@ -880,25 +880,23 @@ final class DoubleJumpTicking {
                     || dj.pendingQueueJumpEdge
                     || (dj.queueJumpEdgeBufferUntilMs != 0L && nowMs < dj.queueJumpEdgeBufferUntilMs);
             int debounceFrames = Math.max(1, cfg.inputDebounceFrames);
-            // Raw input if available; else Hyxin mixin SMS stream; else divergent MovementStates on PlayerInput;
-            // else processed MovementStates.jumping only (not OR'd with jumpHeldLastQueue).
+            // Raw input if available; else divergent MovementStates on PlayerInput; else SMS queue walk end-state
+            // (written this tick by QueueScanner — does not depend on Hyxin mixin bytecode for the boolean); else
+            // processed MovementStates.jumping. Traces showed mqSms=true while src=fallback because lastQueuedJumping()
+            // stayed null when the mixin inject did not populate the tracker.
             Boolean rawJump = rawJumpPressedFromInput(input);
-            Boolean mixinSmsJump = PlayerInputQueueMixin.lastQueuedJumping(input);
             Boolean divergent = divergentJumpSignal(input, st);
             boolean signal;
             String src;
             if (rawJump != null) {
                 signal = rawJump;
                 src = "raw";
-            } else if (dj.movementQueueHadSms && mixinSmsJump != null) {
-                // Prefer SMS jump bit only when this tick's queue actually carried SetMovementStates — avoids treating
-                // stale mixin state as input when Zephyr floods non-SMS updates, and fixes src=fallback when SMS exists
-                // but the tracker was never created before the first SMS (mixin init order).
-                signal = mixinSmsJump;
-                src = "mixinSms";
             } else if (divergent != null) {
                 signal = divergent;
                 src = "pendingMs";
+            } else if (dj.movementQueueHadSms) {
+                signal = dj.jumpHeldLastQueue;
+                src = "queueSms";
             } else {
                 maybeDumpRawJumpCandidates(ref, cmd, input);
                 signal = st.jumping;

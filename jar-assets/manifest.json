@@ -1,7 +1,7 @@
 {
     "Group": "joss",
     "Name": "JossDoubleJump",
-    "Version": "0.3.2",
+    "Version": "0.3.3",
     "Description": "Server-side double jump: extra air jump on jump press while airborne. Stamina and boosts are configurable.",
     "Authors": [
         {
