@@ -492,6 +492,27 @@ final class DoubleJumpTicking {
         return null;
     }
 
+    /**
+     * Walks the movement queue after {@link PlayerSystems.ProcessPlayerInput} — may still contain SMS, or may differ
+     * from the pre-process snapshot {@link DoubleJumpComponent#jumpHeldLastQueue} (scanner runs before processing).
+     */
+    private static boolean peekLastSmsJumpFromQueue(@Nonnull PlayerInput input, @Nonnull boolean[] hadSmsOut) {
+        hadSmsOut[0] = false;
+        List<PlayerInput.InputUpdate> q = input.getMovementUpdateQueue();
+        if (q == null || q.isEmpty()) {
+            return false;
+        }
+        boolean last = false;
+        for (PlayerInput.InputUpdate u : q) {
+            Boolean j = jumpBitFromQueueUpdate(u);
+            if (j != null) {
+                hadSmsOut[0] = true;
+                last = j;
+            }
+        }
+        return last;
+    }
+
     private static List<Method> allMsGettersForClass(Class<?> c) {
         return ALL_MS_GETTERS.computeIfAbsent(c, DoubleJumpTicking::collectAllMovementStatesMethods);
     }
@@ -686,6 +707,7 @@ final class DoubleJumpTicking {
         dj.queueJumpEdgeBufferUntilMs = 0L;
         dj.jumpHeldLastQueue = false;
         dj.movementQueueHadSms = false;
+        dj.postLiftoffSignalMaskTicksRemaining = 0;
         dj.inputState = DoubleJumpComponent.InputState.WAITING_FOR_PRESS;
         dj.jumpSignalLast = false;
         dj.inputCooldownFramesRemaining = 0;
@@ -872,6 +894,11 @@ final class DoubleJumpTicking {
 
             tickAirborne(dj, cfg);
 
+            if (liftoffTick) {
+                int maskTicks = Math.max(0, cfg.postLiftoffJumpSignalIgnoreTicks);
+                dj.postLiftoffSignalMaskTicksRemaining = maskTicks;
+            }
+
             long nowMs =
                 ((TimeResource) cmd.getResource(TimeResource.getResourceType())).getNow().toEpochMilli();
             boolean mixinSmsEdge = PlayerInputQueueMixin.consumeJumpRisingEdge(input);
@@ -880,12 +907,15 @@ final class DoubleJumpTicking {
                     || dj.pendingQueueJumpEdge
                     || (dj.queueJumpEdgeBufferUntilMs != 0L && nowMs < dj.queueJumpEdgeBufferUntilMs);
             int debounceFrames = Math.max(1, cfg.inputDebounceFrames);
-            // Raw input if available; else divergent MovementStates on PlayerInput; else SMS queue walk end-state
-            // (written this tick by QueueScanner — does not depend on Hyxin mixin bytecode for the boolean); else
-            // processed MovementStates.jumping. Traces showed mqSms=true while src=fallback because lastQueuedJumping()
-            // stayed null when the mixin inject did not populate the tracker.
+            // Signal order: raw; divergent pending MS vs applied; live SMS walk of queue after ProcessPlayerInput
+            // (queueSmsLive); pre-process QueueScanner SMS end-state (queueSms); processed st.jumping (fallback).
+            // Post-liftoff mask blanks effectiveSignal for fallback + both queue paths so held jump can register as a
+            // new press (see DoubleJumpConfig.postLiftoffJumpSignalIgnoreTicks). Hyxin mixin still supplies rising-edge
+            // consumption only (consumeJumpRisingEdge).
             Boolean rawJump = rawJumpPressedFromInput(input);
             Boolean divergent = divergentJumpSignal(input, st);
+            boolean[] liveHadSms = new boolean[1];
+            boolean liveEndJump = peekLastSmsJumpFromQueue(input, liveHadSms);
             boolean signal;
             String src;
             if (rawJump != null) {
@@ -894,6 +924,9 @@ final class DoubleJumpTicking {
             } else if (divergent != null) {
                 signal = divergent;
                 src = "pendingMs";
+            } else if (liveHadSms[0]) {
+                signal = liveEndJump;
+                src = "queueSmsLive";
             } else if (dj.movementQueueHadSms) {
                 signal = dj.jumpHeldLastQueue;
                 src = "queueSms";
@@ -902,12 +935,16 @@ final class DoubleJumpTicking {
                 signal = st.jumping;
                 src = "fallback";
             }
+            boolean postLiftoffMask =
+                dj.postLiftoffSignalMaskTicksRemaining > 0
+                    && ("fallback".equals(src) || "queueSms".equals(src) || "queueSmsLive".equals(src));
+            boolean effectiveSignal = postLiftoffMask ? false : signal;
             // Rising edge: signal went false→true since last tick (detects brief taps when st.jumping pulses).
-            boolean edge = signal && !dj.jumpSignalLast;
+            boolean edge = effectiveSignal && !dj.jumpSignalLast;
             // After a release (WAITING_FOR_PRESS), any jump signal counts as a new press — does not require st.jumping
             // to pulse false for a tick while still held from the first jump.
             boolean pressFromWaiting =
-                dj.inputState == DoubleJumpComponent.InputState.WAITING_FOR_PRESS && signal;
+                dj.inputState == DoubleJumpComponent.InputState.WAITING_FOR_PRESS && effectiveSignal;
 
             // Input FSM transitions.
             if (dj.inputState == DoubleJumpComponent.InputState.COOLDOWN_FRAMES) {
@@ -915,9 +952,10 @@ final class DoubleJumpTicking {
                     dj.inputCooldownFramesRemaining--;
                 }
                 if (dj.inputCooldownFramesRemaining <= 0) {
-                    dj.inputState = signal ? DoubleJumpComponent.InputState.HELD : DoubleJumpComponent.InputState.WAITING_FOR_PRESS;
+                    dj.inputState =
+                        effectiveSignal ? DoubleJumpComponent.InputState.HELD : DoubleJumpComponent.InputState.WAITING_FOR_PRESS;
                 }
-            } else if (signal) {
+            } else if (effectiveSignal) {
                 dj.inputState = DoubleJumpComponent.InputState.HELD;
             } else {
                 dj.inputState = DoubleJumpComponent.InputState.WAITING_FOR_PRESS;
@@ -930,11 +968,16 @@ final class DoubleJumpTicking {
                 dj.inputCooldownFramesRemaining = debounceFrames;
             }
 
+            if (dj.postLiftoffSignalMaskTicksRemaining > 0) {
+                dj.postLiftoffSignalMaskTicksRemaining--;
+            }
+
             DoubleJumpTrace.log(
                 ref,
                 cmd,
                 "afterInput: phase=" + dj.phase + " charges=" + dj.chargesRemaining + " liftoffTick=" + liftoffTick
-                    + " inputState=" + dj.inputState + " src=" + src + " sig=" + signal + " edge=" + edge + " pfw=" + pressFromWaiting
+                    + " inputState=" + dj.inputState + " src=" + src + " sig=" + signal + " effSig=" + effectiveSignal
+                    + " mask=" + postLiftoffMask + " edge=" + edge + " pfw=" + pressFromWaiting
                     + " req2=" + requestSecondJump + " cd=" + dj.inputCooldownFramesRemaining
                     + " queueEdge=" + queueEdge + " mixinSmsEdge=" + mixinSmsEdge + " mqSms=" + dj.movementQueueHadSms
                     + " move(jump=" + st.jumping + ",og=" + st.onGround + ",fluid=" + st.inFluid + ",climb=" + st.climbing + ")");
@@ -958,7 +1001,7 @@ final class DoubleJumpTicking {
             }
 
             dj.pendingQueueJumpEdge = false;
-            dj.jumpSignalLast = signal;
+            dj.jumpSignalLast = effectiveSignal;
             // jumpHeldLastQueue is maintained only by QueueScannerSystem (SMS queue walk); do not OR with st.jumping here.
         }
     }
