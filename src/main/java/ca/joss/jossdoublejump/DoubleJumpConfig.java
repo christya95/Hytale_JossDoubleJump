@@ -45,6 +45,14 @@ public final class DoubleJumpConfig {
     public int inputDebounceFrames = 2;
 
     /**
+     * After leaving the ground, for this many ticks the mod pretends the jump signal is false when it would otherwise use
+     * processed {@code MovementStates.jumping} or queue SMS end-state (both can stay true while the key is held). That
+     * resets the input FSM to {@link DoubleJumpComponent.InputState#WAITING_FOR_PRESS} so a held jump still registers as a
+     * new press when the mask ends, or a tap produces a clean edge. Ignored when raw or divergent pending-MS signals are used.
+     */
+    public int postLiftoffJumpSignalIgnoreTicks = 5;
+
+    /**
      * Informational only (persisted in JSON for operators). Not read by gameplay code. Jump-key detection assumes normal
      * survival-style movement; creative flight and similar modes often use different input and movement state.
      */

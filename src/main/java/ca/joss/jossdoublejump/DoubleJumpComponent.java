@@ -65,6 +65,13 @@ public class DoubleJumpComponent implements Component<EntityStore> {
     /** Wall-clock until which a queue jump edge may still be consumed (buffer if AfterInput runs slightly late). */
     long queueJumpEdgeBufferUntilMs;
 
+    /**
+     * While airborne after ground liftoff: ticks remaining where {@link MovementStatesComponent}’s processed
+     * {@code jumping} is treated as false for FSM/edge purposes when the mod falls back to that bit (stuck high while the
+     * key is held). See {@link DoubleJumpConfig#postLiftoffJumpSignalIgnoreTicks}.
+     */
+    int postLiftoffSignalMaskTicksRemaining;
+
     @Nonnull
     public DoubleJumpComponent clone() {
         DoubleJumpComponent c = new DoubleJumpComponent();
@@ -79,6 +86,7 @@ public class DoubleJumpComponent implements Component<EntityStore> {
         c.movementQueueHadSms = this.movementQueueHadSms;
         c.pendingQueueJumpEdge = this.pendingQueueJumpEdge;
         c.queueJumpEdgeBufferUntilMs = this.queueJumpEdgeBufferUntilMs;
+        c.postLiftoffSignalMaskTicksRemaining = this.postLiftoffSignalMaskTicksRemaining;
         return c;
     }
 }
