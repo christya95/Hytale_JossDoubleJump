@@ -1,5 +1,8 @@
 package ca.joss.jossdoublejump.mixin;
 
+import amore.servercomm.capture.InputQueueIngress;
+import amore.servercomm.registry.PerPlayerTraceState;
+import amore.servercomm.registry.ServerCommRegistry;
 import com.hypixel.hytale.server.core.modules.entity.player.PlayerInput;
 import java.util.Collections;
 import java.util.Map;
@@ -86,6 +89,9 @@ public class PlayerInputQueueMixin {
     @Inject(method = "queue", at = @At("HEAD"))
     private void jossDoubleJump$onInputQueued(PlayerInput.InputUpdate update, CallbackInfo ci) {
         PlayerInput self = (PlayerInput) (Object) this;
+        PerPlayerTraceState amoreSt = ServerCommRegistry.stateFor(self);
+        amoreSt.lastIngressNano = System.nanoTime();
+        InputQueueIngress.record(amoreSt.mailbox, update);
         S s = BY_INPUT.computeIfAbsent(self, k -> new S());
         synchronized (s) {
             s.totalQueuedThisTick++;

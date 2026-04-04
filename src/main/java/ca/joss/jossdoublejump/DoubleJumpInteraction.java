@@ -68,12 +68,7 @@ public class DoubleJumpInteraction extends SimpleInstantInteraction {
             fail(ctx, "no DoubleJumpComponent");
             return;
         }
-        DoubleJumpTrace.log(
-            ref,
-            buf,
-            "interaction Double_Jump type=" + type + " phase=" + dj.phase + " charges=" + dj.chargesRemaining + " jumps=" + dj.jumpCount);
         boolean ok = DoubleJumpTicking.tryApply(ref, buf, dj, cfg);
-        DoubleJumpTrace.log(ref, buf, "interaction Double_Jump result ok=" + ok);
         ctx.getState().state = ok ? InteractionState.Finished : InteractionState.Failed;
     }
 

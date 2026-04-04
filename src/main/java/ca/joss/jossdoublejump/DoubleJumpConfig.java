@@ -16,7 +16,7 @@ public final class DoubleJumpConfig {
     public float horizontalBoost;
     public float verticalBoost;
     /** Small upward boost applied on the initial ground jump (after input), to make the liftoff a bit higher. */
-    public float initialJumpBoostY;
+    public float initialJumpBoostY = 1.0f;
     public long cooldownMs;
     public float staminaCost;
     public boolean usePercentageStamina;
@@ -34,9 +34,9 @@ public final class DoubleJumpConfig {
 
     /**
      * How long a queue-detected jump edge remains consumable in {@link DoubleJumpTicking.AfterInputSystem} (ms).
-     * Raise slightly (e.g. 160–220) if packets are bursty (many mods, Zephyr air movement).
+     * Shipped default 300 ms targets bursty real-server queues; lower (e.g. 160–220) if you want stricter edge timing.
      */
-    public long queueJumpEdgeBufferMs = 120L;
+    public long queueJumpEdgeBufferMs = 300L;
 
     /**
      * Frames of input debounce after a second-jump request. Lower (e.g. 1) if taps feel ignored when spamming; higher
@@ -51,7 +51,7 @@ public final class DoubleJumpConfig {
      * this mask does not trigger a second jump when it expires. Ignored for raw or divergent pending-MS. To migrate old
      * tick counts: {@code (old + 1) / 3}.
      */
-    public int postLiftoffJumpSignalIgnoreTicks = 10;
+    public int postLiftoffJumpSignalIgnoreTicks = 6;
 
     /**
      * If true, a mod air jump requires {@link DoubleJumpComponent.InputState#WAITING_FOR_PRESS} and an unmasked rising edge
@@ -66,7 +66,7 @@ public final class DoubleJumpConfig {
      * request even when {@code st.jumping} never produced a clean edge (fallback stuck high). Set 0 to disable. Requires
      * {@link #sawSignalLowWhileWaiting} so a full release still happened — does not repeat the pre-0.3.6 mask-expiry bug.
      */
-    public int tapAssistMinWaitingTicks = 4;
+    public int tapAssistMinWaitingTicks = 2;
 
     /**
      * After a real jump release ({@code HELD} with unmasked {@code signal == false}), how many ticks the mod watches
@@ -81,7 +81,7 @@ public final class DoubleJumpConfig {
      * queue entries this tick (see {@link ca.joss.jossdoublejump.mixin.PlayerInputQueueMixin}) to treat the tick as a
      * possible second tap when SMS edges are missing. Raise if you see false positives (e.g. movement-heavy mods).
      */
-    public int secondJumpMinNonSmsUpdates = 5;
+    public int secondJumpMinNonSmsUpdates = 2;
 
     /**
      * Same window: minimum total {@link com.hypixel.hytale.server.core.modules.entity.player.PlayerInput#queue} calls

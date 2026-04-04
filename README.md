@@ -58,7 +58,18 @@ Edit **`mods/JossDoubleJumpConfig.json`** on the server when you want to tune se
 
 - **`useJumpKey`** — use jump in the air for the extra jump (recommended).
 - **`useAbility2` / `useAbility3`** — optional ability-based activation.
-- **`horizontalBoost` / `verticalBoost`**, **`staminaCost`**, **`maxJumps`**, etc.
+- **`horizontalBoost` / `verticalBoost`**, **`initialJumpBoostY`**, **`staminaCost`**, **`jumpCharges`**, etc.
+- **Jump-key reliability knobs:** **`queueJumpEdgeBufferMs`**, **`postLiftoffJumpSignalIgnoreTicks`**, **`tapAssistMinWaitingTicks`**, **`secondPressGraceTicks`**, **`secondJumpMinNonSmsUpdates`**, **`secondJumpMinTotalQueueUpdates`** — see tuning profiles below.
+
+### Diagnostics (Amore)
+
+The mod bundles **AmoreServerCommFramework** for optional per-player traces (no extra JAR on the server). In-game: **`/amoretraceon`** / **`/amoretraceoff`**; dumps to **`mods/amore-traces/`**: **`/amoretracedumpndjson`**, **`/amoretracedumptrace`**, **`/amoretracedumpcbor`**. See **`docs/DEVELOPMENT.md`** for build notes. Prefer this over scraping generic server logs for jump FSM detail.
+
+### Tuning profiles
+
+**High reliability (shipped defaults)** — Tuned for real dedicated servers where movement queues are often **non-`SetMovementStates`-heavy** and second taps are easy to miss with conservative thresholds. Uses a longer queue edge buffer, shorter post-liftoff FSM mask, more permissive tap/grace windows, and lower synthetic queue burst thresholds. If double jump is inconsistent on your host, start from the embedded **`double_jump_defaults.json`** / **`usageNote`** before changing boosts or charges.
+
+**Balanced** — If you see **false positives** (extra air jump when you did not intend a second tap), tighten gradually: raise **`secondJumpMinNonSmsUpdates`** and **`secondJumpMinTotalQueueUpdates`** (e.g. toward 5–6 / 6–7), shorten **`secondPressGraceTicks`**, and/or reduce **`queueJumpEdgeBufferMs`**. Optionally raise **`tapAssistMinWaitingTicks`** so tap-assist fires less eagerly.
 
 ---
 

@@ -12,6 +12,7 @@ function Get-ServerRoot([string]$repoRoot) {
   $parent = Split-Path $repoRoot -Parent
   $candidates = @(
     (Join-Path $parent "PebbleHotServerRoot"),
+    (Join-Path $parent "PebbleHostServerRoot"),
     $parent,
     $repoRoot
   )
@@ -23,6 +24,7 @@ function Get-ServerRoot([string]$repoRoot) {
 }
 
 $serverRoot = Get-ServerRoot $jossRoot
+$parent = Split-Path $jossRoot -Parent
 $sourcesDir = Join-Path $jossRoot "src\main\java"
 $outClasses = Join-Path $jossRoot "build\classes"
 $workDir = Join-Path $jossRoot "build\unpack-original"
@@ -39,12 +41,21 @@ $templateJar = @(
   (Join-Path $jossRoot "mods\JossDoubleJump.jar")
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
+$amoreCandidates = @(
+  (Join-Path $parent "AmoreServerCommFramework\dist\AmoreServerCommCore.jar"),
+  (Join-Path $jossRoot "..\AmoreServerCommFramework\dist\AmoreServerCommCore.jar")
+)
+$amoreJar = $amoreCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+
 if (-not (Test-Path $hy)) { throw "Missing HytaleServer.jar at $hy" }
 if (-not $hyxinJar) {
   throw "Hyxin JAR not found. Download Hyxin (e.g. Hyxin-0.0.11-all.jar) into server earlyplugins or mods next to HytaleServer.jar - required on classpath for Mixin compile."
 }
 if (-not $templateJar) {
   throw "No JossDoubleJump.jar template. Place dist\JossDoubleJump.jar or mods\JossDoubleJump.jar (run scripts\repack-jar.ps1 first if you have no JAR yet)."
+}
+if (-not $amoreJar) {
+  throw "AmoreServerCommCore.jar not found. Build AmoreServerCommFramework first: .\scripts\build.ps1 in that repo (outputs dist\AmoreServerCommCore.jar)."
 }
 if (-not (Test-Path $sourcesDir)) { throw "Missing Java sources: $sourcesDir" }
 
@@ -56,7 +67,8 @@ Push-Location $workDir
 & $jar xf $templateJar
 Pop-Location
 
-$cp = "$hy;$templateJar;$hyxinJar"
+# Amore JAR before template JAR so new framework APIs are not shadowed by older merged classes inside the template.
+$cp = "$hy;$amoreJar;$hyxinJar;$templateJar"
 $javaFiles = Get-ChildItem -Path $sourcesDir -Recurse -Filter "*.java" | ForEach-Object { $_.FullName }
 & $javac -encoding UTF-8 -cp $cp -d $outClasses @javaFiles
 if ($LASTEXITCODE -ne 0) { throw "javac failed ($LASTEXITCODE)." }
@@ -74,6 +86,16 @@ Get-ChildItem -Path $outClasses -Recurse -File | ForEach-Object {
 Copy-Item -Force (Join-Path $assetsDir "double_jump_defaults.json") $workDir
 Copy-Item -Force (Join-Path $assetsDir "manifest.json") $workDir
 Copy-Item -Force (Join-Path $assetsDir "jossdoublejump.mixins.json") $workDir
+
+$amoreUnpack = Join-Path $jossRoot "build\amore-unpack"
+Remove-Item -Recurse -Force $amoreUnpack -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $amoreUnpack | Out-Null
+Push-Location $amoreUnpack
+& $jar xf $amoreJar
+Pop-Location
+if (Test-Path (Join-Path $amoreUnpack "amore")) {
+  Copy-Item -Recurse -Force (Join-Path $amoreUnpack "amore") $workDir
+}
 
 $outJar = Join-Path $jossRoot "dist\JossDoubleJump.jar"
 New-Item -ItemType Directory -Force -Path (Split-Path $outJar -Parent) | Out-Null

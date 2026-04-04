@@ -12,13 +12,13 @@
   "useAbility2": false,
   "useAbility3": false,
   "useJumpKey": true,
-  "queueJumpEdgeBufferMs": 220,
+  "queueJumpEdgeBufferMs": 300,
   "inputDebounceFrames": 1,
-  "postLiftoffJumpSignalIgnoreTicks": 10,
+  "postLiftoffJumpSignalIgnoreTicks": 6,
   "requireReleaseForDoubleJump": false,
-  "tapAssistMinWaitingTicks": 4,
-  "secondPressGraceTicks": 6,
-  "secondJumpMinNonSmsUpdates": 5,
-  "secondJumpMinTotalQueueUpdates": 6,
-  "usageNote": "Informational: jumpCharges=2 means one charge consumed at liftoff and one left for the mod air jump (reset on landing). Jump-key mode assumes normal survival movement. If double jump misses when tapping fast, raise queueJumpEdgeBufferMs or verticalBoost slightly; with Zephyr, avoid stacking huge horizontalBoost with dash."
+  "tapAssistMinWaitingTicks": 2,
+  "secondPressGraceTicks": 10,
+  "secondJumpMinNonSmsUpdates": 2,
+  "secondJumpMinTotalQueueUpdates": 3,
+  "usageNote": "Shipped defaults favor reliable jump-key double jump on real servers (bursty queues, sparse SetMovementStates). If you see false positives, raise secondJumpMin* and/or lower secondPressGraceTicks toward a balanced profile (see README). Diagnostics: Amore /amoretraceon and dump commands."
 }

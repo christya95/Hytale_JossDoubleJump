@@ -2,6 +2,11 @@
 
 Short log (max three bullets per version). Newest first.
 
+## 0.3.8 (2026-04-04)
+
+- **Defaults:** Shipped JSON + Java fallbacks aligned with **high-reliability** jump-key tuning: `queueJumpEdgeBufferMs` **300**, `postLiftoffJumpSignalIgnoreTicks` **6**, `tapAssistMinWaitingTicks` **2**, `secondPressGraceTicks` **10**, `secondJumpMinNonSmsUpdates` **2**, `secondJumpMinTotalQueueUpdates` **3**; `initialJumpBoostY` default **1.0** in JAR sample + Java.
+- **Noise:** Removed **`DoubleJumpTrace`** (hardcoded username) and related per-tick log strings; use **Amore** (`/amoretraceon`, dump commands) for diagnostics. Docs/README/skills updated accordingly.
+
 ## 0.3.7 (2026-04-03)
 
 - **Tap assist:** If `tapAssistMinWaitingTicks` &gt; 0 (default **4**), after a release was seen (`sawSignalLowWhileWaiting`) and the player stays in `WAITING_FOR_PRESS` long enough, a second jump can fire **without** a clean `signal` edge when fallback `st.jumping` stays high — avoids missed double-jumps on fast taps. Gated by `!edge` and one consume per airborne period in infinite mode (`tapAssistConsumedThisAirborne`).

@@ -43,6 +43,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import amore.servercomm.api.ApplyResult;
 import ca.joss.jossdoublejump.mixin.PlayerInputQueueMixin;
 import ca.joss.jossdoublejump.util.StatUtil;
 
@@ -60,8 +61,6 @@ final class DoubleJumpTicking {
     private static final ConcurrentHashMap<Class<?>, Optional<Method>> RAW_MS_GETTERS = new ConcurrentHashMap<>();
     /** Per class: field of type {@link MovementStates} holding latest client/input movement. */
     private static final ConcurrentHashMap<Class<?>, Optional<Field>> RAW_MS_FIELDS = new ConcurrentHashMap<>();
-    /** Debug: ensure we only dump reflection candidates once per class. */
-    private static final ConcurrentHashMap<Class<?>, Boolean> RAW_JUMP_DEBUG_DUMPED = new ConcurrentHashMap<>();
     /** Cached: all instance no-arg methods returning MovementStates (sorted: likely client/pending first). */
     private static final ConcurrentHashMap<Class<?>, List<Method>> ALL_MS_GETTERS = new ConcurrentHashMap<>();
     /** Cached: all instance fields of type MovementStates (sorted: likely client/pending first). */
@@ -176,70 +175,6 @@ final class DoubleJumpTicking {
         } catch (IllegalAccessException ignored) {
             return null;
         }
-    }
-
-    private static void maybeDumpRawJumpCandidates(
-        @Nonnull Ref<EntityStore> ref,
-        @Nonnull CommandBuffer<EntityStore> cmd,
-        @Nonnull PlayerInput input
-    ) {
-        if (!DoubleJumpTrace.is(ref, cmd)) {
-            return;
-        }
-        Class<?> c = input.getClass();
-        if (RAW_JUMP_DEBUG_DUMPED.putIfAbsent(c, Boolean.TRUE) != null) {
-            return;
-        }
-
-        StringBuilder fields = new StringBuilder(256);
-        for (Class<?> k = c; k != null && k != Object.class; k = k.getSuperclass()) {
-            for (Field f : k.getDeclaredFields()) {
-                if (Modifier.isStatic(f.getModifiers())) {
-                    continue;
-                }
-                Class<?> t = f.getType();
-                String tn = t.getSimpleName();
-                String fn = f.getName();
-                // Only dump likely candidates to avoid huge logs.
-                boolean interesting =
-                    (t == boolean.class || t == Boolean.class)
-                        || tn.toLowerCase(Locale.ROOT).contains("movement")
-                        || fn.toLowerCase(Locale.ROOT).contains("jump");
-                if (!interesting) {
-                    continue;
-                }
-                if (fields.length() > 0) {
-                    fields.append(", ");
-                }
-                fields.append(fn).append(":").append(tn);
-            }
-        }
-
-        StringBuilder methods = new StringBuilder(256);
-        for (Method m : c.getMethods()) {
-            if (m.getParameterCount() != 0) {
-                continue;
-            }
-            Class<?> rt = m.getReturnType();
-            if (rt != boolean.class && rt != Boolean.class) {
-                continue;
-            }
-            String n = m.getName().toLowerCase(Locale.ROOT);
-            if (!n.contains("jump")) {
-                continue;
-            }
-            if (methods.length() > 0) {
-                methods.append(", ");
-            }
-            methods.append(m.getName());
-        }
-
-        DoubleJumpTrace.logRawProbe(
-            ref,
-            cmd,
-            "rawProbe: no raw jump accessor found on " + c.getName()
-                + " | fields=[" + fields + "]"
-                + " | boolJumpMethods=[" + methods + "]");
     }
 
     @Nullable
@@ -595,37 +530,38 @@ final class DoubleJumpTicking {
         @Nonnull DoubleJumpComponent dj,
         @Nonnull DoubleJumpConfig config
     ) {
+        return tryApplyResult(ref, commandBuffer, dj, config) == ApplyResult.APPLIED;
+    }
+
+    static ApplyResult tryApplyResult(
+        @Nonnull Ref<EntityStore> ref,
+        @Nonnull CommandBuffer<EntityStore> commandBuffer,
+        @Nonnull DoubleJumpComponent dj,
+        @Nonnull DoubleJumpConfig config
+    ) {
         long nowMs =
             ((TimeResource) commandBuffer.getResource(TimeResource.getResourceType())).getNow().toEpochMilli();
 
         MovementStatesComponent move =
             (MovementStatesComponent) commandBuffer.getComponent(ref, MovementStatesComponent.getComponentType());
         if (move == null) {
-            DoubleJumpTrace.log(ref, commandBuffer, "tryApply: blocked — no MovementStatesComponent");
-            return false;
+            return ApplyResult.REJECT_NO_MOVEMENT_COMPONENT;
         }
         if (!airborne(move.getMovementStates())) {
-            DoubleJumpTrace.log(ref, commandBuffer, "tryApply: blocked — not airborne (onGround/fluid/climb)");
-            return false;
+            return ApplyResult.REJECT_NOT_AIRBORNE;
         }
         if (!config.infiniteDoubleJump && dj.chargesRemaining <= 0) {
-            DoubleJumpTrace.log(ref, commandBuffer, "tryApply: blocked — no jump charges left");
-            return false;
+            return ApplyResult.REJECT_NO_CHARGES;
         }
         if (config.cooldownMs > 0L && nowMs - dj.lastDoubleJumpTimeMs < config.cooldownMs) {
-            DoubleJumpTrace.log(ref, commandBuffer, "tryApply: blocked — cooldown");
-            return false;
+            return ApplyResult.REJECT_COOLDOWN;
         }
 
         EntityStatMap stats = (EntityStatMap) commandBuffer.getComponent(ref, EntityStatMap.getComponentType());
         EntityStatValue stamina = stats != null ? stats.get(StatUtil.staminaIndex()) : null;
         float staminaCost = stamina == null ? 0f : staminaCost(config, stamina);
         if (staminaCost > 0f && stamina.get() < staminaCost) {
-            DoubleJumpTrace.log(
-                ref,
-                commandBuffer,
-                "tryApply: blocked — stamina " + stamina.get() + " < cost " + staminaCost);
-            return false;
+            return ApplyResult.REJECT_STAMINA;
         }
 
         if (staminaCost > 0f) {
@@ -652,11 +588,7 @@ final class DoubleJumpTicking {
             }
         }
         playRoll(ref, commandBuffer);
-        DoubleJumpTrace.log(
-            ref,
-            commandBuffer,
-            "MOD_DOUBLE_JUMP_APPLIED — mod air jump #" + dj.jumpCount + " chargesLeft=" + dj.chargesRemaining + " impulse=(" + impulse.x + "," + impulse.y + "," + impulse.z + ")");
-        return true;
+        return ApplyResult.APPLIED;
     }
 
     private static boolean airborne(MovementStates s) {
@@ -774,35 +706,37 @@ final class DoubleJumpTicking {
             if (dj == null || msc == null || input == null) {
                 return;
             }
+            List<PlayerInput.InputUpdate> queue = input.getMovementUpdateQueue();
             int[] queueAct = new int[2];
             PlayerInputQueueMixin.takeQueueActivitySnapshot(input, queueAct);
+            // When Hyxin mixin is absent or queue() is not hit the same way, snapshot stays 0 while the buffer still
+            // has updates (see traces: movementQueue size>0 but qTot=0). Synthetic second-jump and tuning need counts.
+            if (queueAct[0] == 0 && queue != null && !queue.isEmpty()) {
+                int tot = 0;
+                int nonSms = 0;
+                for (PlayerInput.InputUpdate u : queue) {
+                    tot++;
+                    if (!(u instanceof PlayerInput.SetMovementStates)) {
+                        nonSms++;
+                    }
+                }
+                queueAct[0] = tot;
+                queueAct[1] = nonSms;
+            }
             dj.totalQueueUpdatesThisTick = queueAct[0];
             dj.nonSmsQueueUpdatesThisTick = queueAct[1];
             dj.pendingQueueJumpEdge = false;
             dj.movementQueueHadSms = false;
-            List<PlayerInput.InputUpdate> queue = input.getMovementUpdateQueue();
             if (queue == null || queue.isEmpty()) {
+                // No SMS walk this tick — avoid leaving jumpHeldLastQueue stuck true from an older SMS batch (blocks
+                // synthetic second-jump when the queue is only velocity/body/head updates).
+                dj.jumpHeldLastQueue = msc.getMovementStates().jumping;
                 return;
             }
 
             long nowMs =
                 ((TimeResource) cmd.getResource(TimeResource.getResourceType())).getNow().toEpochMilli();
             long edgeBufMs = cfg.queueJumpEdgeBufferMs > 0 ? cfg.queueJumpEdgeBufferMs : 120L;
-
-            if (DoubleJumpTrace.is(ref, cmd)) {
-                StringBuilder sb = new StringBuilder(256);
-                sb.append("movementQueue: size=").append(queue.size()).append(" simPhase=").append(dj.phase);
-                for (PlayerInput.InputUpdate update : queue) {
-                    Boolean jb = jumpBitFromQueueUpdate(update);
-                    sb.append(" | ").append(update.getClass().getSimpleName());
-                    if (jb != null) {
-                        sb.append("(j=").append(jb).append(")");
-                    } else {
-                        sb.append("(noSMS)");
-                    }
-                }
-                DoubleJumpTrace.log(ref, cmd, sb.toString());
-            }
 
             MovementStates startMs = msc.getMovementStates();
             boolean serverAirborne = airborne(startMs);
@@ -821,7 +755,11 @@ final class DoubleJumpTicking {
                 }
                 curQJump = j;
             }
-            dj.jumpHeldLastQueue = curQJump;
+            if (!dj.movementQueueHadSms) {
+                dj.jumpHeldLastQueue = startMs.jumping;
+            } else {
+                dj.jumpHeldLastQueue = curQJump;
+            }
 
             if (!serverAirborne) {
                 return;
@@ -835,17 +773,6 @@ final class DoubleJumpTicking {
             if (risingEdge || netEdge) {
                 dj.pendingQueueJumpEdge = true;
                 dj.queueJumpEdgeBufferUntilMs = nowMs + edgeBufMs;
-                DoubleJumpTrace.log(
-                    ref,
-                    cmd,
-                    "queueScan: airborne phase=" + dj.phase + " prevQJump=" + prevQJump + " endQJump=" + curQJump
-                        + " risingEdge=" + risingEdge + " netEdge=" + netEdge + " -> pending+buffer " + edgeBufMs + "ms");
-            } else if (DoubleJumpTrace.is(ref, cmd)) {
-                DoubleJumpTrace.log(
-                    ref,
-                    cmd,
-                    "queueScan: airborne phase=" + dj.phase + " prevQJump=" + prevQJump + " endQJump=" + curQJump
-                        + " risingEdge=false netEdge=false");
             }
         }
     }
@@ -890,6 +817,9 @@ final class DoubleJumpTicking {
             }
 
             Ref<EntityStore> ref = chunk.getReferenceTo(index);
+            long nowMsBridge =
+                ((TimeResource) cmd.getResource(TimeResource.getResourceType())).getNow().toEpochMilli();
+            JossDoubleJumpTraceBridge.beginTick(ref, cmd, input, nowMsBridge);
             MovementStates st = msc.getMovementStates();
             boolean grounded = st.onGround || st.inFluid || st.climbing;
 
@@ -944,7 +874,6 @@ final class DoubleJumpTicking {
                 signal = dj.jumpHeldLastQueue;
                 src = "queueSms";
             } else {
-                maybeDumpRawJumpCandidates(ref, cmd, input);
                 signal = st.jumping;
                 src = "fallback";
             }
@@ -955,6 +884,20 @@ final class DoubleJumpTicking {
             // Rising edge uses **unmasked** signal vs previous unmasked sample — never effectiveSignal, or the post-liftoff
             // mask would make rawSignalLast track the masked path and break edge semantics.
             boolean edge = signal && !dj.rawSignalLast;
+            boolean sourceConflict =
+                divergent != null || (rawJump != null && rawJump.booleanValue() != st.jumping);
+            long nowNano = System.nanoTime();
+            JossDoubleJumpTraceBridge.afterInference(
+                ref,
+                cmd,
+                input,
+                st,
+                signal,
+                src,
+                edge,
+                postLiftoffMask,
+                sourceConflict,
+                nowNano);
 
             boolean canDoubleThisAir =
                 dj.phase == DoubleJumpComponent.Phase.AIR_CAN_DOUBLE
@@ -983,12 +926,10 @@ final class DoubleJumpTicking {
                     && !dj.tapAssistConsumedThisAirborne
                     && !edge;
 
-            // Re-arm grace on real release (unmasked signal low while previously HELD).
-            if (inputStateAtTickStart == DoubleJumpComponent.InputState.HELD && !signal) {
-                int g = Math.max(0, cfg.secondPressGraceTicks);
-                if (g > 0) {
-                    dj.secondPressGraceTicksRemaining = g;
-                }
+            // Re-arm grace on unmasked jump release while a double is still available. HELD-only arming missed cases
+            // where post-liftoff mask / sparse SMS left inputState WAITING though the key had just been released.
+            if (!liftoffTick && canDoubleThisAir && cfg.secondPressGraceTicks > 0 && !signal && dj.rawSignalLast) {
+                dj.secondPressGraceTicksRemaining = Math.max(0, cfg.secondPressGraceTicks);
             }
 
             // Second tap sometimes never produces SetMovementStates jumping rising edges when the queue is mostly
@@ -1028,6 +969,8 @@ final class DoubleJumpTicking {
                     && (!cfg.requireReleaseForDoubleJump
                         || inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS);
             boolean requestSecondJump = requestFromEdge || tapAssist || syntheticSecondJumpIntent;
+            boolean releaseEdge = !signal && dj.rawSignalLast;
+            JossDoubleJumpTraceBridge.beforeDecision(ref, cmd, input, requestSecondJump, releaseEdge);
             // Do not enter input cooldown on liftoff tick (WAITING + held jump is normal first jump, not mod double).
             if (requestSecondJump && !liftoffTick) {
                 dj.inputState = DoubleJumpComponent.InputState.COOLDOWN_FRAMES;
@@ -1038,26 +981,14 @@ final class DoubleJumpTicking {
                 dj.postLiftoffSignalMaskTicksRemaining--;
             }
 
-            DoubleJumpTrace.log(
-                ref,
-                cmd,
-                "afterInput: phase=" + dj.phase + " charges=" + dj.chargesRemaining + " liftoffTick=" + liftoffTick
-                    + " inputState=" + dj.inputState + " was=" + inputStateAtTickStart + " src=" + src + " sig=" + signal
-                    + " effSig=" + effectiveSignal + " mask=" + postLiftoffMask + " edge=" + edge + " tapA=" + tapAssist
-                    + " synthI=" + syntheticSecondJumpIntent + " grace=" + dj.secondPressGraceTicksRemaining + " qTot="
-                    + dj.totalQueueUpdatesThisTick + " qNonSms=" + dj.nonSmsQueueUpdatesThisTick + " tw="
-                    + dj.ticksWaitingForSecondJump + " sawLo=" + dj.sawSignalLowWhileWaiting + " rel="
-                    + cfg.requireReleaseForDoubleJump + " req2=" + requestSecondJump + " cd="
-                    + dj.inputCooldownFramesRemaining + " queueEdge=" + queueEdge + " mixinSmsEdge=" + mixinSmsEdge
-                    + " mqSms=" + dj.movementQueueHadSms + " move(jump=" + st.jumping + ",og=" + st.onGround + ",fluid="
-                    + st.inFluid + ",climb=" + st.climbing + ")");
-
+            ApplyResult applyTrace = ApplyResult.REJECT_NOT_REQUESTED;
             if (DoubleJumpConfig.ActivationMode.from(cfg) == DoubleJumpConfig.ActivationMode.JUMP_KEY
                 && dj.phase == DoubleJumpComponent.Phase.AIR_CAN_DOUBLE
                 && !liftoffTick
                 && (queueEdge || requestSecondJump)
                 && (cfg.infiniteDoubleJump || dj.chargesRemaining > 0)) {
-                if (tryApply(ref, cmd, dj, cfg)) {
+                applyTrace = tryApplyResult(ref, cmd, dj, cfg);
+                if (applyTrace == ApplyResult.APPLIED) {
                     dj.queueJumpEdgeBufferUntilMs = 0L;
                     if (tapAssist) {
                         dj.tapAssistConsumedThisAirborne = true;
@@ -1067,6 +998,7 @@ final class DoubleJumpTicking {
                     }
                 }
             }
+            JossDoubleJumpTraceBridge.afterDecisionApply(ref, cmd, input, dj, applyTrace);
 
             // Optional: slight initial jump boost (ground liftoff) for feel.
             if (liftoffTick && cfg.initialJumpBoostY > 0f && signal) {
@@ -1078,7 +1010,8 @@ final class DoubleJumpTicking {
 
             dj.pendingQueueJumpEdge = false;
             dj.rawSignalLast = signal;
-            // jumpHeldLastQueue is maintained only by QueueScannerSystem (SMS queue walk); do not OR with st.jumping here.
+            // jumpHeldLastQueue: QueueScanner sets it from SMS walk when present; when the queue has no SMS it mirrors
+            // applied movementStates.jumping so stale SMS does not block synthetic second-jump.
 
             if (dj.secondPressGraceTicksRemaining > 0
                 && inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS) {

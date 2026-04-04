@@ -34,6 +34,7 @@ import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
 import javax.annotation.Nonnull;
+import ca.joss.jossdoublejump.amore.AmoreTraceCommands;
 import ca.joss.jossdoublejump.util.ConfigLoader;
 
 public class DoubleJump extends JavaPlugin {
@@ -81,6 +82,11 @@ public class DoubleJump extends JavaPlugin {
         reg.registerSystem((ISystem) new DoubleJumpTicking.AfterInputSystem(doubleJumpComponentType));
         this.getCommandRegistry().registerCommand((AbstractCommand) new DoubleJumpCommands.Mod());
         this.getCommandRegistry().registerCommand((AbstractCommand) new DoubleJumpCommands.Settings());
+        this.getCommandRegistry().registerCommand((AbstractCommand) new AmoreTraceCommands.TraceOn());
+        this.getCommandRegistry().registerCommand((AbstractCommand) new AmoreTraceCommands.TraceOff());
+        this.getCommandRegistry().registerCommand((AbstractCommand) new AmoreTraceCommands.DumpNdjson());
+        this.getCommandRegistry().registerCommand((AbstractCommand) new AmoreTraceCommands.DumpPerfetto());
+        this.getCommandRegistry().registerCommand((AbstractCommand) new AmoreTraceCommands.DumpCbor());
         if (DoubleJumpConfig.ActivationMode.from(DoubleJumpConfig.get()).usesAbilityInjection()) {
             GlobalAbilityUnlocker.inject();
         }
