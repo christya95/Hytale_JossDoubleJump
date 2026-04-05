@@ -43,6 +43,17 @@ public class DoubleJumpComponent implements Component<EntityStore> {
     boolean rawSignalLast;
 
     /**
+     * Once {@code effectiveSignal} has been false at least once after liftoff this airborne period (jump released in air
+     * for FSM purposes). Reset on ground and on liftoff.
+     */
+    boolean airborneJumpReleased;
+
+    /**
+     * Set when a unified press edge fires after {@link #airborneJumpReleased}; cleared on successful mod air apply or ground.
+     */
+    boolean pendingSecondPress;
+
+    /**
      * Consecutive ticks (while {@link InputState#WAITING_FOR_PRESS} at tick start and air can still double-jump) for tap assist.
      */
     int ticksWaitingForSecondJump;
@@ -113,6 +124,8 @@ public class DoubleJumpComponent implements Component<EntityStore> {
         c.phase = this.phase;
         c.inputState = this.inputState;
         c.rawSignalLast = this.rawSignalLast;
+        c.airborneJumpReleased = this.airborneJumpReleased;
+        c.pendingSecondPress = this.pendingSecondPress;
         c.ticksWaitingForSecondJump = this.ticksWaitingForSecondJump;
         c.sawSignalLowWhileWaiting = this.sawSignalLowWhileWaiting;
         c.tapAssistConsumedThisAirborne = this.tapAssistConsumedThisAirborne;

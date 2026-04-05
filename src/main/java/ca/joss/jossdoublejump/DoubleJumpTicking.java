@@ -642,6 +642,8 @@ final class DoubleJumpTicking {
         dj.postLiftoffSignalMaskTicksRemaining = 0;
         dj.inputState = DoubleJumpComponent.InputState.WAITING_FOR_PRESS;
         dj.rawSignalLast = false;
+        dj.airborneJumpReleased = false;
+        dj.pendingSecondPress = false;
         dj.ticksWaitingForSecondJump = 0;
         dj.sawSignalLowWhileWaiting = false;
         dj.tapAssistConsumedThisAirborne = false;
@@ -828,8 +830,6 @@ final class DoubleJumpTicking {
                 return;
             }
 
-            DoubleJumpComponent.InputState inputStateAtTickStart = dj.inputState;
-
             boolean liftoffTick = dj.phase == DoubleJumpComponent.Phase.GROUNDED;
             if (!cfg.infiniteDoubleJump && liftoffTick) {
                 dj.chargesRemaining = Math.max(0, dj.chargesRemaining - 1);
@@ -843,6 +843,8 @@ final class DoubleJumpTicking {
                 // First-jump SMS edge + buffer must not satisfy queueEdge on the next tick (tryApply skipped this tick).
                 dj.queueJumpEdgeBufferUntilMs = 0L;
                 dj.pendingQueueJumpEdge = false;
+                dj.airborneJumpReleased = false;
+                dj.pendingSecondPress = false;
             }
 
             long nowMs =
@@ -910,29 +912,13 @@ final class DoubleJumpTicking {
             boolean canDoubleThisAir =
                 dj.phase == DoubleJumpComponent.Phase.AIR_CAN_DOUBLE
                     && (cfg.infiniteDoubleJump || dj.chargesRemaining > 0);
-            if (!liftoffTick && canDoubleThisAir && inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS) {
-                dj.ticksWaitingForSecondJump++;
-                if (!signal) {
-                    dj.sawSignalLowWhileWaiting = true;
-                }
-            } else if (!liftoffTick) {
-                dj.ticksWaitingForSecondJump = 0;
-                if (inputStateAtTickStart == DoubleJumpComponent.InputState.HELD) {
-                    dj.sawSignalLowWhileWaiting = false;
-                }
+            if (!liftoffTick && canDoubleThisAir && !effectiveSignal) {
+                dj.airborneJumpReleased = true;
             }
-
-            boolean tapAssist =
-                cfg.tapAssistMinWaitingTicks > 0
-                    && !liftoffTick
-                    && dj.phase == DoubleJumpComponent.Phase.AIR_CAN_DOUBLE
-                    && (cfg.infiniteDoubleJump || dj.chargesRemaining > 0)
-                    && inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS
-                    && signal
-                    && dj.sawSignalLowWhileWaiting
-                    && dj.ticksWaitingForSecondJump >= cfg.tapAssistMinWaitingTicks
-                    && !dj.tapAssistConsumedThisAirborne
-                    && !edge;
+            boolean pressEdgeThisTick = edge || queueEdge;
+            if (!liftoffTick && canDoubleThisAir && dj.airborneJumpReleased && pressEdgeThisTick) {
+                dj.pendingSecondPress = true;
+            }
 
             // Input FSM transitions.
             if (dj.inputState == DoubleJumpComponent.InputState.COOLDOWN_FRAMES) {
@@ -949,13 +935,8 @@ final class DoubleJumpTicking {
                 dj.inputState = DoubleJumpComponent.InputState.WAITING_FOR_PRESS;
             }
 
-            boolean requestFromEdge =
-                edge
-                    && (!cfg.requireReleaseForDoubleJump
-                        || inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS);
-            boolean requestSecondJump = requestFromEdge || tapAssist;
             boolean releaseEdge = !signal && dj.rawSignalLast;
-            JossDoubleJumpTraceBridge.beforeDecision(ref, cmd, input, requestSecondJump, releaseEdge);
+            JossDoubleJumpTraceBridge.beforeDecision(ref, cmd, input, dj.pendingSecondPress, releaseEdge);
 
             if (dj.postLiftoffSignalMaskTicksRemaining > 0) {
                 dj.postLiftoffSignalMaskTicksRemaining--;
@@ -965,16 +946,14 @@ final class DoubleJumpTicking {
             if (DoubleJumpConfig.ActivationMode.from(cfg) == DoubleJumpConfig.ActivationMode.JUMP_KEY
                 && dj.phase == DoubleJumpComponent.Phase.AIR_CAN_DOUBLE
                 && !liftoffTick
-                && (queueEdge || requestSecondJump)
+                && dj.pendingSecondPress
                 && (cfg.infiniteDoubleJump || dj.chargesRemaining > 0)) {
                 applyTrace = tryApplyResult(ref, cmd, dj, cfg);
                 if (applyTrace == ApplyResult.APPLIED) {
                     dj.queueJumpEdgeBufferUntilMs = 0L;
-                    if (tapAssist) {
-                        dj.tapAssistConsumedThisAirborne = true;
-                    }
-                    // Debounce only after a real apply — pre-apply cooldown locked WAITING during rejects (stamina,
-                    // cooldownMs, etc.) and broke requireReleaseForDoubleJump + tapAssist until debounce expired.
+                    dj.pendingSecondPress = false;
+                    dj.airborneJumpReleased = false;
+                    // Debounce only after a real apply (stamina/cooldown rejects do not consume pendingSecondPress).
                     dj.inputState = DoubleJumpComponent.InputState.COOLDOWN_FRAMES;
                     dj.inputCooldownFramesRemaining = debounceFrames;
                 }
