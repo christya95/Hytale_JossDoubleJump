@@ -840,6 +840,9 @@ final class DoubleJumpTicking {
             if (liftoffTick) {
                 int maskTicks = Math.max(0, cfg.postLiftoffJumpSignalIgnoreTicks);
                 dj.postLiftoffSignalMaskTicksRemaining = maskTicks;
+                // First-jump SMS edge + buffer must not satisfy queueEdge on the next tick (tryApply skipped this tick).
+                dj.queueJumpEdgeBufferUntilMs = 0L;
+                dj.pendingQueueJumpEdge = false;
             }
 
             long nowMs =
@@ -926,29 +929,6 @@ final class DoubleJumpTicking {
                     && !dj.tapAssistConsumedThisAirborne
                     && !edge;
 
-            // Re-arm grace on unmasked jump release while a double is still available. HELD-only arming missed cases
-            // where post-liftoff mask / sparse SMS left inputState WAITING though the key had just been released.
-            if (!liftoffTick && canDoubleThisAir && cfg.secondPressGraceTicks > 0 && !signal && dj.rawSignalLast) {
-                dj.secondPressGraceTicksRemaining = Math.max(0, cfg.secondPressGraceTicks);
-            }
-
-            // Second tap sometimes never produces SetMovementStates jumping rising edges when the queue is mostly
-            // non-SMS. After grace is armed from a release, allow one mod air jump from queue-burst heuristics.
-            int minNonSms = Math.max(1, cfg.secondJumpMinNonSmsUpdates);
-            int minTotalQ = Math.max(1, cfg.secondJumpMinTotalQueueUpdates);
-            boolean syntheticSecondJumpIntent =
-                cfg.secondPressGraceTicks > 0
-                    && !liftoffTick
-                    && canDoubleThisAir
-                    && inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS
-                    && !edge
-                    && !queueEdge
-                    && !dj.jumpHeldLastQueue
-                    && dj.secondPressGraceTicksRemaining > 0
-                    && !dj.secondJumpSyntheticConsumedThisAirborne
-                    && dj.nonSmsQueueUpdatesThisTick >= minNonSms
-                    && dj.totalQueueUpdatesThisTick >= minTotalQ;
-
             // Input FSM transitions.
             if (dj.inputState == DoubleJumpComponent.InputState.COOLDOWN_FRAMES) {
                 if (dj.inputCooldownFramesRemaining > 0) {
@@ -968,14 +948,9 @@ final class DoubleJumpTicking {
                 edge
                     && (!cfg.requireReleaseForDoubleJump
                         || inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS);
-            boolean requestSecondJump = requestFromEdge || tapAssist || syntheticSecondJumpIntent;
+            boolean requestSecondJump = requestFromEdge || tapAssist;
             boolean releaseEdge = !signal && dj.rawSignalLast;
             JossDoubleJumpTraceBridge.beforeDecision(ref, cmd, input, requestSecondJump, releaseEdge);
-            // Do not enter input cooldown on liftoff tick (WAITING + held jump is normal first jump, not mod double).
-            if (requestSecondJump && !liftoffTick) {
-                dj.inputState = DoubleJumpComponent.InputState.COOLDOWN_FRAMES;
-                dj.inputCooldownFramesRemaining = debounceFrames;
-            }
 
             if (dj.postLiftoffSignalMaskTicksRemaining > 0) {
                 dj.postLiftoffSignalMaskTicksRemaining--;
@@ -993,9 +968,10 @@ final class DoubleJumpTicking {
                     if (tapAssist) {
                         dj.tapAssistConsumedThisAirborne = true;
                     }
-                    if (syntheticSecondJumpIntent) {
-                        dj.secondJumpSyntheticConsumedThisAirborne = true;
-                    }
+                    // Debounce only after a real apply — pre-apply cooldown locked WAITING during rejects (stamina,
+                    // cooldownMs, etc.) and broke requireReleaseForDoubleJump + tapAssist until debounce expired.
+                    dj.inputState = DoubleJumpComponent.InputState.COOLDOWN_FRAMES;
+                    dj.inputCooldownFramesRemaining = debounceFrames;
                 }
             }
             JossDoubleJumpTraceBridge.afterDecisionApply(ref, cmd, input, dj, applyTrace);
@@ -1011,12 +987,7 @@ final class DoubleJumpTicking {
             dj.pendingQueueJumpEdge = false;
             dj.rawSignalLast = signal;
             // jumpHeldLastQueue: QueueScanner sets it from SMS walk when present; when the queue has no SMS it mirrors
-            // applied movementStates.jumping so stale SMS does not block synthetic second-jump.
-
-            if (dj.secondPressGraceTicksRemaining > 0
-                && inputStateAtTickStart == DoubleJumpComponent.InputState.WAITING_FOR_PRESS) {
-                dj.secondPressGraceTicksRemaining--;
-            }
+            // applied movementStates.jumping so stale SMS does not block second-jump edge/tap heuristics.
         }
     }
 }
