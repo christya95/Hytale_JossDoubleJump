@@ -959,6 +959,7 @@ final class DoubleJumpTicking {
                             PlayerInputJumpAuthorityMixin.lastAuthorityFeed(input).name());
                 }
                 onGrounded(dj, cfg);
+                JumpKeyAuthority.clearPendingOnLand(ref);
                 PlayerInputJumpAuthorityMixin.syncAfterGrounded(input);
                 JumpEdgeTick.endAfterInputTick(ref);
                 return;
@@ -1038,9 +1039,13 @@ final class DoubleJumpTicking {
             // Post-liftoff mask blanks effectiveSignal for fallback + both queue paths so held jump can register as a
             // new press (see DoubleJumpConfig.postLiftoffJumpSignalIgnoreTicks). Hyxin mixin still supplies rising-edge
             // consumption only (consumeJumpRisingEdge).
-            boolean edgeChannelMode = JumpEdgeTick.shouldUseJumpEdgeChannel(ref, cfg, jumpKeyMode);
+            boolean edgeHeldHealthy = JumpEdgeTick.edgeHeldHealthy(ref, cfg);
+            boolean edgePressActive = JumpEdgeTick.edgePressActive(ref, cfg);
+            boolean edgeChannelInPlay = JumpEdgeTick.edgeChannelInPlay(ref, cfg, jumpKeyMode);
+            JumpEdgeTick.logEdgeSelection(
+                ref, cfg, jumpKeyMode, latchUser, edgeChannelInPlay, edgeHeldHealthy, edgePressActive);
             Boolean rawJump;
-            if (edgeChannelMode) {
+            if (edgeHeldHealthy) {
                 setRawJumpProbeSource("edgeChannel");
                 rawJump = JumpKeyAuthority.isJumpHeld(ref);
             } else {
@@ -1049,17 +1054,17 @@ final class DoubleJumpTicking {
             Boolean divergent = divergentJumpSignal(input, st);
             boolean[] liveHadSms = new boolean[1];
             boolean liveEndJump = peekLastSmsJumpFromQueue(input, liveHadSms);
-            if (authDiag && jumpKeyMode && cfg.useJumpEdgeChannel && !edgeChannelMode) {
+            if (authDiag && jumpKeyMode && cfg.useJumpEdgeChannel && !edgeChannelInPlay) {
                 String reason =
                     !JumpKeyAuthority.hasEverReceivedEdge(ref)
                         ? "no edge packets yet"
-                        : (!JumpKeyAuthority.isFresh(ref, cfg.edgeChannelTimeoutMs) ? "edge stale" : "edge unavailable");
+                        : (!edgeHeldHealthy && !edgePressActive ? "no active press or fresh held" : "edge unavailable");
                 ((HytaleLogger.Api) LATCH_DIAG.atInfo())
                     .log("[JDJ edge] fallback reason=%s user=%s", reason, latchUser);
             }
             boolean signal;
             String src;
-            if (edgeChannelMode) {
+            if (edgeHeldHealthy) {
                 signal = JumpKeyAuthority.isJumpHeld(ref);
                 src = "edgeChannel";
             } else if (!useAuth
@@ -1090,16 +1095,19 @@ final class DoubleJumpTicking {
                 signal = st.jumping;
                 src = "fallback";
             }
+            if (edgePressActive && !edgeHeldHealthy) {
+                src = "edgeChannel";
+            }
             if (authDiag && jumpKeyMode && cfg.useJumpEdgeChannel) {
                 ((HytaleLogger.Api) LATCH_DIAG.atInfo())
                     .log(
                         "[JDJ edge] authority winner=%s (edgeChannel=%b signalSrc=%s)",
-                        edgeChannelMode ? "edgeChannel" : "smsFallback",
-                        edgeChannelMode,
+                        edgeChannelInPlay ? "edgeChannel" : "smsFallback",
+                        edgeChannelInPlay,
                         src);
             }
             boolean postLiftoffMask =
-                !edgeChannelMode
+                !edgeChannelInPlay
                     && !useAuth
                     && dj.postLiftoffSignalMaskTicksRemaining > 0
                     && ("fallback".equals(src) || "queueSms".equals(src) || "queueSmsLive".equals(src));
@@ -1107,7 +1115,9 @@ final class DoubleJumpTicking {
             // Rising edge uses **unmasked** signal vs previous unmasked sample — never effectiveSignal, or the post-liftoff
             // mask would make rawSignalLast track the masked path and break edge semantics.
             boolean edge =
-                edgeChannelMode ? JumpKeyAuthority.isJumpDownThisTick(ref) : (signal && !dj.rawSignalLast);
+                edgeChannelInPlay
+                    ? (JumpKeyAuthority.isJumpDownThisTick(ref) || JumpKeyAuthority.hasPendingAuthoritativeDownEdge(ref))
+                    : (signal && !dj.rawSignalLast);
             if (authDiag) {
                 ((HytaleLogger.Api) LATCH_DIAG.atInfo())
                     .log(
@@ -1267,7 +1277,7 @@ final class DoubleJumpTicking {
                         useAuth);
             }
             boolean pressEdgeThisTick =
-                (edgeChannelMode || useAuth) ? edge : (edge || queueEdge);
+                (edgeChannelInPlay || useAuth) ? edge : (edge || queueEdge);
             // Carry only for a post-release second-press edge during the post-liftoff mask window. Never arm from the
             // initial liftoff/mask press while the jump key has not gone false in air (avoids release-alone -> double).
             if (!useAuth
@@ -1423,7 +1433,7 @@ final class DoubleJumpTicking {
             }
 
             boolean releaseEdge =
-                edgeChannelMode ? JumpKeyAuthority.isJumpUpThisTick(ref) : (!signal && dj.rawSignalLast);
+                edgeChannelInPlay ? JumpKeyAuthority.isJumpUpThisTick(ref) : (!signal && dj.rawSignalLast);
             JossDoubleJumpTraceBridge.beforeDecision(ref, cmd, input, dj.pendingSecondPress, releaseEdge);
 
             if (dj.postLiftoffSignalMaskTicksRemaining > 0) {
@@ -1465,6 +1475,21 @@ final class DoubleJumpTicking {
                             dj.inputCooldownFramesRemaining);
                 }
                 if (applyTrace == ApplyResult.APPLIED) {
+                    boolean hadPendingEdge =
+                        cfg.useJumpEdgeChannel && JumpKeyAuthority.hasPendingAuthoritativeDownEdge(ref);
+                    if (cfg.useJumpEdgeChannel) {
+                        JumpKeyAuthority.clearPendingAuthoritativeDownEdge(ref);
+                    }
+                    if (cfg.traceJumpAuthorityDiagnostics && hadPendingEdge) {
+                        ((HytaleLogger.Api) LATCH_DIAG.atInfo())
+                            .log(
+                                "[JDJ edge] CONSUME_AUTH_EDGE user=%s liftoffTick=%b canDouble=%b airborneJumpReleased=%b signalSrc=%s",
+                                latchUser,
+                                liftoffTick,
+                                canDoubleThisAir,
+                                dj.airborneJumpReleased,
+                                src);
+                    }
                     if (latchDiagAir) {
                         ((HytaleLogger.Api) LATCH_DIAG.atInfo())
                             .log("[DJ latch] user=%s APPLIED (double jump consumed)", latchUser);

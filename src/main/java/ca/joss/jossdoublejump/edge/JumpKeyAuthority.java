@@ -12,7 +12,8 @@ import javax.annotation.Nullable;
 
 /**
  * Per-player authoritative jump state from the edge channel. Tick-scoped DOWN/UP flags are cleared each
- * {@link JumpEdgeTick#endAfterInputTick}.
+ * {@link JumpEdgeTick#endAfterInputTick}. {@link #pendingAuthoritativeDownEdge} survives across ticks until consumed by
+ * the double-jump latch, cleared on UP, landing, or successful apply.
  */
 public final class JumpKeyAuthority {
 
@@ -26,6 +27,8 @@ public final class JumpKeyAuthority {
         long lastEdgeArrivalNanos;
         long rateWindowStartNs;
         int rateCountInWindow;
+        /** One-shot carry: DOWN accepted but not yet consumed by second-jump latch / tryApply. */
+        boolean pendingAuthoritativeDownEdge;
     }
 
     private static final ConcurrentHashMap<UUID, State> BY_UUID = new ConcurrentHashMap<>();
@@ -62,6 +65,19 @@ public final class JumpKeyAuthority {
         return System.nanoTime() - s.lastEdgeArrivalNanos <= maxNanos;
     }
 
+    /** Age of last edge packet in ms, or -1 if none. */
+    public static long lastEdgeAgeMs(Ref<EntityStore> ref) {
+        PlayerRef pr = playerRef(ref);
+        if (pr == null) {
+            return -1L;
+        }
+        State s = BY_UUID.get(pr.getUuid());
+        if (s == null || s.lastEdgeArrivalNanos == 0L) {
+            return -1L;
+        }
+        return (System.nanoTime() - s.lastEdgeArrivalNanos) / 1_000_000L;
+    }
+
     public static boolean isJumpHeld(Ref<EntityStore> ref) {
         PlayerRef pr = playerRef(ref);
         if (pr == null) {
@@ -89,6 +105,39 @@ public final class JumpKeyAuthority {
         return s != null && s.jumpUpThisTick;
     }
 
+    public static boolean hasPendingAuthoritativeDownEdge(Ref<EntityStore> ref) {
+        PlayerRef pr = playerRef(ref);
+        if (pr == null) {
+            return false;
+        }
+        State s = BY_UUID.get(pr.getUuid());
+        return s != null && s.pendingAuthoritativeDownEdge;
+    }
+
+    /**
+     * Clears pending DOWN carry (landing, explicit clear). Does not touch held/tick flags.
+     */
+    public static void clearPendingOnLand(Ref<EntityStore> ref) {
+        PlayerRef pr = playerRef(ref);
+        if (pr == null) {
+            return;
+        }
+        State st = BY_UUID.get(pr.getUuid());
+        if (st == null) {
+            return;
+        }
+        synchronized (st) {
+            st.pendingAuthoritativeDownEdge = false;
+        }
+    }
+
+    /**
+     * Clears pending after second-jump tryApply succeeded.
+     */
+    public static void clearPendingAuthoritativeDownEdge(Ref<EntityStore> ref) {
+        clearPendingOnLand(ref);
+    }
+
     /**
      * Rate-limited accept; ignores stale {@code seq}. Logs diagnostics when configured.
      *
@@ -114,25 +163,31 @@ public final class JumpKeyAuthority {
             }
             st.rateCountInWindow++;
             boolean heldBefore = st.jumpHeld;
+            boolean pendingBefore = st.pendingAuthoritativeDownEdge;
             st.lastAcceptedSeq = m.seq;
             st.lastEdgeArrivalNanos = now;
             if ("DOWN".equals(m.t)) {
                 st.jumpHeld = true;
                 st.jumpDownThisTick = true;
+                st.pendingAuthoritativeDownEdge = true;
             } else {
                 st.jumpHeld = false;
                 st.jumpUpThisTick = true;
+                st.pendingAuthoritativeDownEdge = false;
             }
             boolean heldAfter = st.jumpHeld;
+            boolean pendingAfter = st.pendingAuthoritativeDownEdge;
             if (cfg != null && cfg.traceJumpAuthorityDiagnostics) {
                 ((HytaleLogger.Api) LOG.atInfo())
                     .log(
-                        "[JDJ edge] accepted seq=%d type=%s user=%s heldBefore=%b heldAfter=%b",
+                        "[JDJ edge] accepted seq=%d type=%s user=%s heldBefore=%b heldAfter=%b pendingBefore=%b pendingAfter=%b",
                         m.seq,
                         m.t,
                         playerRef.getUsername(),
                         heldBefore,
-                        heldAfter);
+                        heldAfter,
+                        pendingBefore,
+                        pendingAfter);
             }
             return true;
         }
