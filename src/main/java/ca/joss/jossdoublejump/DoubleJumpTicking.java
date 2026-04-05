@@ -864,7 +864,12 @@ final class DoubleJumpTicking {
             boolean liveEndJump = peekLastSmsJumpFromQueue(input, liveHadSms);
             boolean signal;
             String src;
-            if (rawJump != null) {
+            if (rawJump != null && rawJump.booleanValue() == st.jumping && liveHadSms[0]) {
+                // Raw accessor matched merged movement only — no client lead. Prefer last SMS in the queue so a
+                // second tap can still produce an unmasked edge when stationary input is sparse (see queueSmsLive).
+                signal = liveEndJump;
+                src = "queueSmsLive";
+            } else if (rawJump != null) {
                 signal = rawJump;
                 src = "raw";
             } else if (divergent != null) {
