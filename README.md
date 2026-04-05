@@ -63,7 +63,7 @@ Edit **`mods/JossDoubleJumpConfig.json`** on the server when you want to tune se
 
 ### Diagnostics (Amore)
 
-The mod bundles **AmoreServerCommFramework** for optional per-player traces (no extra JAR on the server). In-game: **`/amoretraceon`** / **`/amoretraceoff`**; dumps to **`mods/amore-traces/`**: **`/amoretracedumpndjson`**, **`/amoretracedumptrace`**, **`/amoretracedumpcbor`**. See **`docs/DEVELOPMENT.md`** for build notes. Prefer this over scraping generic server logs for jump FSM detail.
+The mod bundles **AmoreServerCommFramework** for optional per-player traces (no extra JAR on the server). In-game: **`/amoretraceon`** / **`/amoretraceoff`**; dumps to **`mods/amore-traces/`**: **`/amoretracedumpndjson`**, **`/amoretracedumptrace`**, **`/amoretracedumpcbor`**. Each command echoes **`[Amore] …`** in chat so you can confirm it ran. See **`docs/DEVELOPMENT.md`** for build notes. Prefer this over scraping generic server logs for jump FSM detail.
 
 ### Tuning profiles
 

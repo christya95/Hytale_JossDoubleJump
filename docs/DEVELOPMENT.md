@@ -20,7 +20,7 @@ The mod embeds **[AmoreServerCommFramework](https://github.com/christya95/AmoreS
 
 1. Build the framework once: in a sibling folder **`../AmoreServerCommFramework`**, run **`scripts/build.ps1`** → **`dist/AmoreServerCommCore.jar`**.
 2. Run **`scripts/build.ps1`** here: it requires that JAR, places **`amore/**`** on the compile classpath **before** the template JAR (so new APIs are not shadowed), and merges **`amore/`** classes into **`dist/JossDoubleJump.jar`**.
-3. In-game: **`/amoretraceon`** / **`/amoretraceoff`**; dumps: **`/amoretracedumpndjson`**, **`/amoretracedumptrace`**, **`/amoretracedumpcbor`** → **`mods/amore-traces/`**. See **`../AmoreServerCommFramework/README.md`** for architecture.
+3. In-game: **`/amoretraceon`** / **`/amoretraceoff`**; dumps: **`/amoretracedumpndjson`**, **`/amoretracedumptrace`**, **`/amoretracedumpcbor`** → **`mods/amore-traces/`**. Commands send **`[Amore] …`** chat messages (toggle state, dump path/filename, or errors). See **`../AmoreServerCommFramework/README.md`** for architecture.
 
 ---
 

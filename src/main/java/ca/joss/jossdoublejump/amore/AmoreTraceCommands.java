@@ -8,9 +8,9 @@ import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.protocol.GameMode;
+import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.command.system.CommandContext;
 import com.hypixel.hytale.server.core.command.system.basecommands.AbstractPlayerCommand;
-import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.modules.entity.player.PlayerInput;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
@@ -41,6 +41,7 @@ public final class AmoreTraceCommands {
         ) {
             ServerComm.setTracing(playerRef.getUsername(), true);
             ((HytaleLogger.Api) LOG.atInfo()).log("Amore trace ON for %s", playerRef.getUsername());
+            context.sendMessage(Message.raw("[Amore] Movement tracing ON for your session."));
         }
     }
 
@@ -60,6 +61,7 @@ public final class AmoreTraceCommands {
         ) {
             ServerComm.setTracing(playerRef.getUsername(), false);
             ((HytaleLogger.Api) LOG.atInfo()).log("Amore trace OFF for %s", playerRef.getUsername());
+            context.sendMessage(Message.raw("[Amore] Movement tracing OFF."));
         }
     }
 
@@ -77,7 +79,7 @@ public final class AmoreTraceCommands {
             @Nonnull PlayerRef playerRef,
             @Nonnull World world
         ) {
-            dump(store, ref, playerRef, DumpFormat.NDJSON);
+            dump(context, store, ref, playerRef, DumpFormat.NDJSON);
         }
     }
 
@@ -95,7 +97,7 @@ public final class AmoreTraceCommands {
             @Nonnull PlayerRef playerRef,
             @Nonnull World world
         ) {
-            dump(store, ref, playerRef, DumpFormat.PERFETTO_JSON);
+            dump(context, store, ref, playerRef, DumpFormat.PERFETTO_JSON);
         }
     }
 
@@ -113,7 +115,7 @@ public final class AmoreTraceCommands {
             @Nonnull PlayerRef playerRef,
             @Nonnull World world
         ) {
-            dump(store, ref, playerRef, DumpFormat.CBOR);
+            dump(context, store, ref, playerRef, DumpFormat.CBOR);
         }
     }
 
@@ -124,6 +126,7 @@ public final class AmoreTraceCommands {
     }
 
     private static void dump(
+        CommandContext context,
         Store<EntityStore> store,
         Ref<EntityStore> ref,
         PlayerRef playerRef,
@@ -132,6 +135,7 @@ public final class AmoreTraceCommands {
         PlayerInput input = (PlayerInput) store.getComponent(ref, PlayerInput.getComponentType());
         if (input == null) {
             ((HytaleLogger.Api) LOG.atWarning()).log("Amore dump: no PlayerInput");
+            context.sendMessage(Message.raw("[Amore] Dump failed: no movement input yet (try again after playing)."));
             return;
         }
         PerPlayerTraceState st = ServerCommRegistry.stateFor(input);
@@ -145,8 +149,10 @@ public final class AmoreTraceCommands {
                     case CBOR -> TraceDumpService.dumpCbor(st, user, seconds);
                 };
             ((HytaleLogger.Api) LOG.atInfo()).log("Amore dump written: %s", path.toString());
+            context.sendMessage(Message.raw("[Amore] Trace file written: " + path.getFileName()));
         } catch (Exception e) {
             ((HytaleLogger.Api) LOG.atWarning()).log("Amore dump failed: %s", e.getMessage());
+            context.sendMessage(Message.raw("[Amore] Dump failed: " + e.getMessage()));
         }
     }
 }
