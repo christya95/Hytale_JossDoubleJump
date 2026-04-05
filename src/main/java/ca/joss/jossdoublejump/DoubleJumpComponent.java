@@ -3,6 +3,7 @@ package ca.joss.jossdoublejump;
 import com.hypixel.hytale.component.Component;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 public class DoubleJumpComponent implements Component<EntityStore> {
     /** Locomotion state for mod extra air jumps (vanilla ground jump unchanged). */
@@ -43,8 +44,8 @@ public class DoubleJumpComponent implements Component<EntityStore> {
     boolean rawSignalLast;
 
     /**
-     * Once {@code effectiveSignal} has been false at least once after liftoff this airborne period (jump released in air
-     * for FSM purposes). Reset on ground and on liftoff.
+     * Once unmasked {@code signal} has been false at least once after liftoff this airborne period (physical release in
+     * air). Reset on ground and on liftoff.
      */
     boolean airborneJumpReleased;
 
@@ -52,6 +53,12 @@ public class DoubleJumpComponent implements Component<EntityStore> {
      * Set when a unified press edge fires after {@link #airborneJumpReleased}; cleared on successful mod air apply or ground.
      */
     boolean pendingSecondPress;
+
+    /**
+     * One-shot: {@code pressEdge} during {@code postLiftoffSignalMaskTicksRemaining} after {@link #airborneJumpReleased}
+     * became true (second-press candidate only; never the initial liftoff press before first in-air release).
+     */
+    boolean pendingObservedPressEdgeCarry;
 
     /**
      * Consecutive ticks (while {@link InputState#WAITING_FOR_PRESS} at tick start and air can still double-jump) for tap assist.
@@ -115,6 +122,10 @@ public class DoubleJumpComponent implements Component<EntityStore> {
      */
     int postLiftoffSignalMaskTicksRemaining;
 
+    /** Previous tick raw jump reflection for {@code traceLatchDiagnostics} only; reset on ground. */
+    @Nullable
+    Boolean latchDiagPrevRawJump;
+
     @Nonnull
     public DoubleJumpComponent clone() {
         DoubleJumpComponent c = new DoubleJumpComponent();
@@ -126,6 +137,7 @@ public class DoubleJumpComponent implements Component<EntityStore> {
         c.rawSignalLast = this.rawSignalLast;
         c.airborneJumpReleased = this.airborneJumpReleased;
         c.pendingSecondPress = this.pendingSecondPress;
+        c.pendingObservedPressEdgeCarry = this.pendingObservedPressEdgeCarry;
         c.ticksWaitingForSecondJump = this.ticksWaitingForSecondJump;
         c.sawSignalLowWhileWaiting = this.sawSignalLowWhileWaiting;
         c.tapAssistConsumedThisAirborne = this.tapAssistConsumedThisAirborne;
@@ -139,6 +151,7 @@ public class DoubleJumpComponent implements Component<EntityStore> {
         c.pendingQueueJumpEdge = this.pendingQueueJumpEdge;
         c.queueJumpEdgeBufferUntilMs = this.queueJumpEdgeBufferUntilMs;
         c.postLiftoffSignalMaskTicksRemaining = this.postLiftoffSignalMaskTicksRemaining;
+        c.latchDiagPrevRawJump = this.latchDiagPrevRawJump;
         return c;
     }
 }

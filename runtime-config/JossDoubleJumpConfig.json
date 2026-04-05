@@ -20,5 +20,6 @@
   "secondPressGraceTicks": 10,
   "secondJumpMinNonSmsUpdates": 2,
   "secondJumpMinTotalQueueUpdates": 3,
+  "traceLatchDiagnostics": false,
   "usageNote": "Shipped defaults favor reliable jump-key double jump on real servers (bursty queues, sparse SetMovementStates). If you see false positives, raise secondJumpMin* and/or lower secondPressGraceTicks toward a balanced profile (see README). Diagnostics: Amore /amoretraceon and dump commands."
 }

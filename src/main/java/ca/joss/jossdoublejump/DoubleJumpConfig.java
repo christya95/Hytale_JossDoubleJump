@@ -90,6 +90,25 @@ public final class DoubleJumpConfig {
     public int secondJumpMinTotalQueueUpdates = 6;
 
     /**
+     * Temporary diagnostic: when true, jump-key airborne ticks log latch inputs ({@code signal}, {@code effectiveSignal},
+     * edges, queue edge, release/pending flags, tryApply result). Disable for normal gameplay — high log volume.
+     */
+    public boolean traceLatchDiagnostics = false;
+
+    /**
+     * When true and a queue SMS sample exists (Hyxin {@code queue} inject and/or {@link ca.joss.jossdoublejump.mixin.PlayerInputJumpAuthorityMixin#feedFromQueueSmsWalk} from the pre-ProcessPlayerInput queue walk), jump-key mode uses that
+     * client {@code MovementStates.jumping} stream as primary signal and strict second-press latching (no queue-edge /
+     * carry for double). When false or before any SMS has been seen, the legacy reflection + queue + fallback chain is used.
+     */
+    public boolean authoritativeJumpKeyInput = true;
+
+    /**
+     * When true, emits {@code [DJ auth]}, {@code [DJ release]}, {@code [DJ second press]}, {@code [DJ latch source]} lines
+     * for jump-key authority and latch decisions. Low volume compared to {@link #traceLatchDiagnostics}.
+     */
+    public boolean traceJumpAuthorityDiagnostics = false;
+
+    /**
      * Informational only (persisted in JSON for operators). Not read by gameplay code. Jump-key detection assumes normal
      * survival-style movement; creative flight and similar modes often use different input and movement state.
      */

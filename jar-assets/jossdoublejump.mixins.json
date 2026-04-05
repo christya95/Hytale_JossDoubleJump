@@ -3,6 +3,7 @@
   "minVersion": "0.8",
   "package": "ca.joss.jossdoublejump.mixin",
   "mixins": [
-    "PlayerInputQueueMixin"
+    "PlayerInputQueueMixin",
+    "PlayerInputJumpAuthorityMixin"
   ]
 }
