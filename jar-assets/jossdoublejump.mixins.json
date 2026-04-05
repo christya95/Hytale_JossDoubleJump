@@ -4,6 +4,7 @@
   "package": "ca.joss.jossdoublejump.mixin",
   "mixins": [
     "PlayerInputQueueMixin",
-    "PlayerInputJumpAuthorityMixin"
+    "PlayerInputJumpAuthorityMixin",
+    "PageManagerMixin"
   ]
 }

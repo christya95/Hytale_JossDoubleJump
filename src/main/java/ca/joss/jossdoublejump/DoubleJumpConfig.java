@@ -109,6 +109,36 @@ public final class DoubleJumpConfig {
     public boolean traceJumpAuthorityDiagnostics = false;
 
     /**
+     * When true and {@link #authoritativeJumpKeyInput} is active ({@code useAuth}), logs {@code [DJ authPath]} lines:
+     * per-air-stint SMS held-bit rise/fall counts, ignored rises (e.g. no airborne release yet), edge vs mixin-rise
+     * mismatches, rises after release that did not latch {@code pendingSecondPress}, land summaries when a double charge
+     * was still available, and richer {@code tryApply_not_applied} context. Disable for normal gameplay.
+     */
+    public boolean traceAuthoritativePathDiagnostics = false;
+
+    /**
+     * When true, prefer client-originated {@code jdj:v1:} jump DOWN/UP edges over SMS-held sampling when the channel is
+     * fresh ({@link #edgeChannelTimeoutMs}). Requires the optional client mod. Server-only installs never receive edges,
+     * so behavior stays on the SMS/queue path.
+     */
+    public boolean useJumpEdgeChannel = true;
+
+    /**
+     * When true (default), fall back to {@link #authoritativeJumpKeyInput} / queue / legacy held state if the edge channel
+     * is stale or unused.
+     */
+    public boolean fallbackToSmsHeld = true;
+
+    /**
+     * If no jump-edge packet arrived within this many milliseconds, {@link #useJumpEdgeChannel} is not used for raw
+     * signal (automatic fallback when {@link #fallbackToSmsHeld} is true).
+     */
+    public long edgeChannelTimeoutMs = 1500L;
+
+    /** Max jump-edge messages applied per player per second (drain-time). */
+    public int edgePacketsPerSecondLimit = 30;
+
+    /**
      * Informational only (persisted in JSON for operators). Not read by gameplay code. Jump-key detection assumes normal
      * survival-style movement; creative flight and similar modes often use different input and movement state.
      */

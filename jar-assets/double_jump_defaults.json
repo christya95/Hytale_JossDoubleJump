@@ -23,5 +23,10 @@
   "traceLatchDiagnostics": false,
   "authoritativeJumpKeyInput": true,
   "traceJumpAuthorityDiagnostics": false,
+  "traceAuthoritativePathDiagnostics": false,
+  "useJumpEdgeChannel": true,
+  "fallbackToSmsHeld": true,
+  "edgeChannelTimeoutMs": 1500,
+  "edgePacketsPerSecondLimit": 30,
   "usageNote": "Shipped defaults favor reliable jump-key double jump on real servers (bursty queues, sparse SetMovementStates). If you see false positives, raise secondJumpMin* and/or lower secondPressGraceTicks toward a balanced profile (see README). Diagnostics: Amore /amoretraceon and dump commands."
 }

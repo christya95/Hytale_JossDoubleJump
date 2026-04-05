@@ -65,6 +65,8 @@ Edit **`mods/JossDoubleJumpConfig.json`** on the server when you want to tune se
 
 The mod bundles **AmoreServerCommFramework** for optional per-player traces (no extra JAR on the server). In-game: **`/amoretraceon`** / **`/amoretraceoff`**; dumps to **`mods/amore-traces/`**: **`/amoretracedumpndjson`**, **`/amoretracedumptrace`**, **`/amoretracedumpcbor`**. Each command echoes **`[Amore] …`** in chat so you can confirm it ran. See **`docs/DEVELOPMENT.md`** for build notes. Prefer this over scraping generic server logs for jump FSM detail.
 
+For **authoritative jump-key** diagnosis (SMS held-bit path), set **`traceAuthoritativePathDiagnostics": true`** in **`mods/JossDoubleJumpConfig.json`** to emit **`[DJ authPath] …`** lines (airborne auth rise/fall counts, ignored rises, edge vs mixin mismatch, tryApply failure context, land-with-unused-charge summary). Disable after testing; volume is moderate. **`traceJumpAuthorityDiagnostics`** remains the lighter **`[DJ auth]`** summary.
+
 ### Tuning profiles
 
 **High reliability (shipped defaults)** — Tuned for real dedicated servers where movement queues are often **non-`SetMovementStates`-heavy** and second taps are easy to miss with conservative thresholds. Uses a longer queue edge buffer, shorter post-liftoff FSM mask, more permissive tap/grace windows, and lower synthetic queue burst thresholds. If double jump is inconsistent on your host, start from the embedded **`double_jump_defaults.json`** / **`usageNote`** before changing boosts or charges.

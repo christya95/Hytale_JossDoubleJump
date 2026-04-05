@@ -13,6 +13,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Tracks client jump intent from {@link PlayerInput#queue} ingress and from the pre-ProcessPlayerInput SMS queue walk.
  * {@link PlayerInput} has no separate keyboard field; {@link PlayerInput.SetMovementStates} (and rider SMS) carry the
  * same {@link com.hypixel.hytale.protocol.MovementStates#jumping} bit before merge into {@code MovementStatesComponent}.
+ *
+ * <p><strong>What “authoritative” means:</strong> both {@link AuthorityFeed#QUEUE_INJECT} and
+ * {@link AuthorityFeed#SCANNER_WALK} ultimately mirror the client’s SMS {@code jumping} <em>held</em> state (last SMS in
+ * the walk or last queued SMS). There is no separate raw key-down/key-up channel here — only that held bit sampled when
+ * SMS appears. {@link #authoritativeRisingThisTick} / {@link #authoritativeFallingThisTick} compare this tick’s held bit
+ * to the previous server tick’s end state; they are not true sub-tick keyboard transitions. For reliable double-tap
+ * detection when the client sends sparse SMS updates, a finer-grained source (engine field/mixin or custom packets) may
+ * be required.
  */
 @Mixin(PlayerInput.class)
 public class PlayerInputJumpAuthorityMixin {

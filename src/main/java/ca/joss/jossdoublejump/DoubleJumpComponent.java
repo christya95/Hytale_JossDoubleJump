@@ -126,6 +126,29 @@ public class DoubleJumpComponent implements Component<EntityStore> {
     @Nullable
     Boolean latchDiagPrevRawJump;
 
+    // --- traceAuthoritativePathDiagnostics (current airborne stint; reset liftoff + ground)
+
+    /** Count of {@link ca.joss.jossdoublejump.mixin.PlayerInputJumpAuthorityMixin#authoritativeRisingThisTick} while air can double. */
+    int authDiagAirRiseCount;
+
+    /** Count of {@link ca.joss.jossdoublejump.mixin.PlayerInputJumpAuthorityMixin#authoritativeFallingThisTick} while air can double. */
+    int authDiagAirFallCount;
+
+    /** True once {@link #airborneJumpReleased} became true this stint. */
+    boolean authDiagSawReleaseThisAir;
+
+    /** True once an authoritative rise was seen while {@link #airborneJumpReleased} was already true. */
+    boolean authDiagSecondRiseSeenAfterRelease;
+
+    /** Authoritative rises observed while released and able to double (subset of second-press candidates). */
+    int authDiagRisesAfterReleaseCount;
+
+    /** True if {@link #pendingSecondPress} was ever set this stint. */
+    boolean authDiagPendingSecondEver;
+
+    /** Number of {@link ca.joss.jossdoublejump.DoubleJumpTicking#tryApplyResult} calls this stint (second-jump path). */
+    int authDiagTryApplyAttempts;
+
     @Nonnull
     public DoubleJumpComponent clone() {
         DoubleJumpComponent c = new DoubleJumpComponent();
@@ -152,6 +175,13 @@ public class DoubleJumpComponent implements Component<EntityStore> {
         c.queueJumpEdgeBufferUntilMs = this.queueJumpEdgeBufferUntilMs;
         c.postLiftoffSignalMaskTicksRemaining = this.postLiftoffSignalMaskTicksRemaining;
         c.latchDiagPrevRawJump = this.latchDiagPrevRawJump;
+        c.authDiagAirRiseCount = this.authDiagAirRiseCount;
+        c.authDiagAirFallCount = this.authDiagAirFallCount;
+        c.authDiagSawReleaseThisAir = this.authDiagSawReleaseThisAir;
+        c.authDiagSecondRiseSeenAfterRelease = this.authDiagSecondRiseSeenAfterRelease;
+        c.authDiagRisesAfterReleaseCount = this.authDiagRisesAfterReleaseCount;
+        c.authDiagPendingSecondEver = this.authDiagPendingSecondEver;
+        c.authDiagTryApplyAttempts = this.authDiagTryApplyAttempts;
         return c;
     }
 }

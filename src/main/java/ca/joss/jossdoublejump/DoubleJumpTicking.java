@@ -45,6 +45,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import amore.servercomm.api.ApplyResult;
+import ca.joss.jossdoublejump.edge.JumpEdgeTick;
+import ca.joss.jossdoublejump.edge.JumpKeyAuthority;
 import ca.joss.jossdoublejump.mixin.PlayerInputJumpAuthorityMixin;
 import ca.joss.jossdoublejump.mixin.PlayerInputQueueMixin;
 import ca.joss.jossdoublejump.util.StatUtil;
@@ -695,6 +697,17 @@ final class DoubleJumpTicking {
         dj.nonSmsQueueUpdatesThisTick = 0;
         dj.inputCooldownFramesRemaining = 0;
         dj.chargesRemaining = cfg != null && !cfg.infiniteDoubleJump ? cfg.totalJumpCharges() : 0;
+        resetAuthoritativePathDiagFields(dj);
+    }
+
+    private static void resetAuthoritativePathDiagFields(DoubleJumpComponent dj) {
+        dj.authDiagAirRiseCount = 0;
+        dj.authDiagAirFallCount = 0;
+        dj.authDiagSawReleaseThisAir = false;
+        dj.authDiagSecondRiseSeenAfterRelease = false;
+        dj.authDiagRisesAfterReleaseCount = 0;
+        dj.authDiagPendingSecondEver = false;
+        dj.authDiagTryApplyAttempts = 0;
     }
 
     private static String latchDiagUsername(@Nullable Ref<EntityStore> ref, @Nullable CommandBuffer<EntityStore> cmd) {
@@ -916,6 +929,7 @@ final class DoubleJumpTicking {
             }
 
             Ref<EntityStore> ref = chunk.getReferenceTo(index);
+            JumpEdgeTick.drainAtTickStart(ref, cfg);
             long nowMsBridge =
                 ((TimeResource) cmd.getResource(TimeResource.getResourceType())).getNow().toEpochMilli();
             JossDoubleJumpTraceBridge.beginTick(ref, cmd, input, nowMsBridge);
@@ -923,8 +937,30 @@ final class DoubleJumpTicking {
             boolean grounded = st.onGround || st.inFluid || st.climbing;
 
             if (grounded) {
+                if (cfg.traceAuthoritativePathDiagnostics
+                    && DoubleJumpConfig.ActivationMode.from(cfg) == DoubleJumpConfig.ActivationMode.JUMP_KEY
+                    && cfg.authoritativeJumpKeyInput
+                    && PlayerInputJumpAuthorityMixin.hasAuthoritativeJumpSample(input)
+                    && dj.phase == DoubleJumpComponent.Phase.AIR_CAN_DOUBLE
+                    && !cfg.infiniteDoubleJump
+                    && dj.chargesRemaining > 0) {
+                    String u = latchDiagUsername(ref, cmd);
+                    ((HytaleLogger.Api) LATCH_DIAG.atInfo())
+                        .log(
+                            "[DJ authPath] LAND_WITH_CHARGE_UNUSED user=%s chargesLeft=%d airRises=%d airFalls=%d sawRelease=%b risesAfterRelease=%d pendingSecondEver=%b tryApplyAttempts=%d lastFeed=%s",
+                            u,
+                            dj.chargesRemaining,
+                            dj.authDiagAirRiseCount,
+                            dj.authDiagAirFallCount,
+                            dj.authDiagSawReleaseThisAir,
+                            dj.authDiagRisesAfterReleaseCount,
+                            dj.authDiagPendingSecondEver,
+                            dj.authDiagTryApplyAttempts,
+                            PlayerInputJumpAuthorityMixin.lastAuthorityFeed(input).name());
+                }
                 onGrounded(dj, cfg);
                 PlayerInputJumpAuthorityMixin.syncAfterGrounded(input);
+                JumpEdgeTick.endAfterInputTick(ref);
                 return;
             }
 
@@ -936,6 +972,7 @@ final class DoubleJumpTicking {
                 jumpKeyMode && cfg.authoritativeJumpKeyInput
                     && PlayerInputJumpAuthorityMixin.hasAuthoritativeJumpSample(input);
             boolean authDiag = jumpKeyMode && cfg.traceJumpAuthorityDiagnostics;
+            boolean pathDiag = cfg.traceAuthoritativePathDiagnostics && useAuth;
 
             try {
 
@@ -964,6 +1001,7 @@ final class DoubleJumpTicking {
                 dj.pendingQueueJumpEdge = false;
                 dj.airborneJumpReleased = false;
                 dj.pendingSecondPress = false;
+                resetAuthoritativePathDiagFields(dj);
             }
 
             long nowMs =
@@ -1000,13 +1038,31 @@ final class DoubleJumpTicking {
             // Post-liftoff mask blanks effectiveSignal for fallback + both queue paths so held jump can register as a
             // new press (see DoubleJumpConfig.postLiftoffJumpSignalIgnoreTicks). Hyxin mixin still supplies rising-edge
             // consumption only (consumeJumpRisingEdge).
-            Boolean rawJump = rawJumpPressedFromInput(input);
+            boolean edgeChannelMode = JumpEdgeTick.shouldUseJumpEdgeChannel(ref, cfg, jumpKeyMode);
+            Boolean rawJump;
+            if (edgeChannelMode) {
+                setRawJumpProbeSource("edgeChannel");
+                rawJump = JumpKeyAuthority.isJumpHeld(ref);
+            } else {
+                rawJump = rawJumpPressedFromInput(input);
+            }
             Boolean divergent = divergentJumpSignal(input, st);
             boolean[] liveHadSms = new boolean[1];
             boolean liveEndJump = peekLastSmsJumpFromQueue(input, liveHadSms);
+            if (authDiag && jumpKeyMode && cfg.useJumpEdgeChannel && !edgeChannelMode) {
+                String reason =
+                    !JumpKeyAuthority.hasEverReceivedEdge(ref)
+                        ? "no edge packets yet"
+                        : (!JumpKeyAuthority.isFresh(ref, cfg.edgeChannelTimeoutMs) ? "edge stale" : "edge unavailable");
+                ((HytaleLogger.Api) LATCH_DIAG.atInfo())
+                    .log("[JDJ edge] fallback reason=%s user=%s", reason, latchUser);
+            }
             boolean signal;
             String src;
-            if (!useAuth
+            if (edgeChannelMode) {
+                signal = JumpKeyAuthority.isJumpHeld(ref);
+                src = "edgeChannel";
+            } else if (!useAuth
                 && rawJump != null
                 && rawJump.booleanValue() == st.jumping
                 && liveHadSms[0]) {
@@ -1034,14 +1090,24 @@ final class DoubleJumpTicking {
                 signal = st.jumping;
                 src = "fallback";
             }
+            if (authDiag && jumpKeyMode && cfg.useJumpEdgeChannel) {
+                ((HytaleLogger.Api) LATCH_DIAG.atInfo())
+                    .log(
+                        "[JDJ edge] authority winner=%s (edgeChannel=%b signalSrc=%s)",
+                        edgeChannelMode ? "edgeChannel" : "smsFallback",
+                        edgeChannelMode,
+                        src);
+            }
             boolean postLiftoffMask =
-                !useAuth
+                !edgeChannelMode
+                    && !useAuth
                     && dj.postLiftoffSignalMaskTicksRemaining > 0
                     && ("fallback".equals(src) || "queueSms".equals(src) || "queueSmsLive".equals(src));
             boolean effectiveSignal = postLiftoffMask ? false : signal;
             // Rising edge uses **unmasked** signal vs previous unmasked sample — never effectiveSignal, or the post-liftoff
             // mask would make rawSignalLast track the masked path and break edge semantics.
-            boolean edge = signal && !dj.rawSignalLast;
+            boolean edge =
+                edgeChannelMode ? JumpKeyAuthority.isJumpDownThisTick(ref) : (signal && !dj.rawSignalLast);
             if (authDiag) {
                 ((HytaleLogger.Api) LATCH_DIAG.atInfo())
                     .log(
@@ -1091,6 +1157,11 @@ final class DoubleJumpTicking {
             boolean releasedBefore = dj.airborneJumpReleased;
             boolean pendingBefore = dj.pendingSecondPress;
 
+            boolean mixinRise =
+                pathDiag && PlayerInputJumpAuthorityMixin.authoritativeRisingThisTick(input);
+            boolean mixinFall =
+                pathDiag && PlayerInputJumpAuthorityMixin.authoritativeFallingThisTick(input);
+
             if (latchDiagAir && signal != dj.rawSignalLast) {
                 ((HytaleLogger.Api) LATCH_DIAG.atInfo())
                     .log(
@@ -1115,6 +1186,77 @@ final class DoubleJumpTicking {
             if (!liftoffTick && canDoubleThisAir && !signal) {
                 dj.airborneJumpReleased = true;
             }
+            if (dj.airborneJumpReleased) {
+                dj.authDiagSawReleaseThisAir = true;
+            }
+
+            if (pathDiag && !liftoffTick && canDoubleThisAir && mixinRise) {
+                dj.authDiagAirRiseCount++;
+                String feed = PlayerInputJumpAuthorityMixin.lastAuthorityFeed(input).name();
+                ((HytaleLogger.Api) LATCH_DIAG.atInfo())
+                    .log(
+                        "[DJ authPath] AIR_AUTH_RISE n=%d user=%s feed=%s signal=%b edgeFsm=%b rawLast=%b releasedNow=%b",
+                        dj.authDiagAirRiseCount,
+                        latchUser,
+                        feed,
+                        signal,
+                        edge,
+                        dj.rawSignalLast,
+                        dj.airborneJumpReleased);
+                if (!dj.airborneJumpReleased) {
+                    ((HytaleLogger.Api) LATCH_DIAG.atInfo())
+                        .log(
+                            "[DJ authPath] AUTH_RISE_IGNORED reason=no_airborne_release_yet user=%s canDbl=%b phase=%s signal=%b edgeFsm=%b mixinRise=%b",
+                            latchUser,
+                            canDoubleThisAir,
+                            dj.phase.name(),
+                            signal,
+                            edge,
+                            mixinRise);
+                }
+            }
+            if (pathDiag && !liftoffTick && canDoubleThisAir && mixinFall) {
+                dj.authDiagAirFallCount++;
+                ((HytaleLogger.Api) LATCH_DIAG.atInfo())
+                    .log(
+                        "[DJ authPath] AIR_AUTH_FALL n=%d user=%s feed=%s signal=%b edgeFsm=%b rawLast=%b",
+                        dj.authDiagAirFallCount,
+                        latchUser,
+                        PlayerInputJumpAuthorityMixin.lastAuthorityFeed(input).name(),
+                        signal,
+                        edge,
+                        dj.rawSignalLast);
+            }
+            if (pathDiag
+                && !liftoffTick
+                && canDoubleThisAir
+                && mixinRise
+                && dj.airborneJumpReleased) {
+                dj.authDiagSecondRiseSeenAfterRelease = true;
+                dj.authDiagRisesAfterReleaseCount++;
+            }
+            if (pathDiag && !liftoffTick && mixinRise && !canDoubleThisAir) {
+                ((HytaleLogger.Api) LATCH_DIAG.atInfo())
+                    .log(
+                        "[DJ authPath] AUTH_RISE_IGNORED reason=no_double_capacity user=%s phase=%s charges=%d inf=%b",
+                        latchUser,
+                        dj.phase.name(),
+                        dj.chargesRemaining,
+                        cfg.infiniteDoubleJump);
+            }
+            if (pathDiag && !liftoffTick && canDoubleThisAir && mixinRise != edge) {
+                ((HytaleLogger.Api) LATCH_DIAG.atInfo())
+                    .log(
+                        "[DJ authPath] EDGE_MISMATCH user=%s mixinRise=%b edgeFsm=%b signal=%b rawLast=%b released=%b feed=%s",
+                        latchUser,
+                        mixinRise,
+                        edge,
+                        signal,
+                        dj.rawSignalLast,
+                        dj.airborneJumpReleased,
+                        PlayerInputJumpAuthorityMixin.lastAuthorityFeed(input).name());
+            }
+
             if (authDiag && !liftoffTick && canDoubleThisAir && !releasedBefore && dj.airborneJumpReleased) {
                 ((HytaleLogger.Api) LATCH_DIAG.atInfo())
                     .log(
@@ -1124,7 +1266,8 @@ final class DoubleJumpTicking {
                         src,
                         useAuth);
             }
-            boolean pressEdgeThisTick = useAuth ? edge : (edge || queueEdge);
+            boolean pressEdgeThisTick =
+                (edgeChannelMode || useAuth) ? edge : (edge || queueEdge);
             // Carry only for a post-release second-press edge during the post-liftoff mask window. Never arm from the
             // initial liftoff/mask press while the jump key has not gone false in air (avoids release-alone -> double).
             if (!useAuth
@@ -1167,6 +1310,41 @@ final class DoubleJumpTicking {
                 if (pressEdgeThisTick) {
                     dj.pendingSecondPress = true;
                 }
+            }
+            if (dj.pendingSecondPress) {
+                dj.authDiagPendingSecondEver = true;
+            }
+            if (pathDiag
+                && !liftoffTick
+                && canDoubleThisAir
+                && mixinRise
+                && dj.airborneJumpReleased
+                && !pressEdgeThisTick) {
+                ((HytaleLogger.Api) LATCH_DIAG.atInfo())
+                    .log(
+                        "[DJ authPath] RISE_AFTER_RELEASE_NO_LATCH user=%s pressEdge=%b edgeFsm=%b qEdge=%b signal=%b rawLast=%b pendingBefore=%b pendingNow=%b inputState=%s cooldownRem=%d",
+                        latchUser,
+                        pressEdgeThisTick,
+                        edge,
+                        queueEdge,
+                        signal,
+                        dj.rawSignalLast,
+                        pendingBefore,
+                        dj.pendingSecondPress,
+                        dj.inputState.name(),
+                        dj.inputCooldownFramesRemaining);
+            }
+            if (pathDiag
+                && !liftoffTick
+                && canDoubleThisAir
+                && mixinRise
+                && dj.airborneJumpReleased
+                && pressEdgeThisTick
+                && !dj.pendingSecondPress) {
+                ((HytaleLogger.Api) LATCH_DIAG.atInfo())
+                    .log(
+                        "[DJ authPath] UNEXPECTED user=%s mixinRise+pressEdge but pendingSecondPress false after latch block",
+                        latchUser);
             }
             if (authDiag && !liftoffTick && canDoubleThisAir && edge && !dj.airborneJumpReleased) {
                 ((HytaleLogger.Api) LATCH_DIAG.atInfo())
@@ -1244,7 +1422,8 @@ final class DoubleJumpTicking {
                 dj.inputState = DoubleJumpComponent.InputState.WAITING_FOR_PRESS;
             }
 
-            boolean releaseEdge = !signal && dj.rawSignalLast;
+            boolean releaseEdge =
+                edgeChannelMode ? JumpKeyAuthority.isJumpUpThisTick(ref) : (!signal && dj.rawSignalLast);
             JossDoubleJumpTraceBridge.beforeDecision(ref, cmd, input, dj.pendingSecondPress, releaseEdge);
 
             if (dj.postLiftoffSignalMaskTicksRemaining > 0) {
@@ -1257,6 +1436,7 @@ final class DoubleJumpTicking {
                 && !liftoffTick
                 && dj.pendingSecondPress
                 && (cfg.infiniteDoubleJump || dj.chargesRemaining > 0)) {
+                dj.authDiagTryApplyAttempts++;
                 applyTrace = tryApplyResult(ref, cmd, dj, cfg);
                 if (latchDiagAir) {
                     ((HytaleLogger.Api) LATCH_DIAG.atInfo())
@@ -1269,6 +1449,20 @@ final class DoubleJumpTicking {
                             latchUser,
                             applyTrace.name(),
                             useAuth);
+                }
+                if (pathDiag && applyTrace != ApplyResult.APPLIED) {
+                    ((HytaleLogger.Api) LATCH_DIAG.atInfo())
+                        .log(
+                            "[DJ authPath] TRY_APPLY_FAIL user=%s result=%s releaseSeen=%b risesAfterRelease=%d secondRiseFlag=%b pendingSecondPress=%b tryApplyAttempt#=%d inputState=%s cooldownRem=%d",
+                            latchUser,
+                            applyTrace.name(),
+                            dj.authDiagSawReleaseThisAir,
+                            dj.authDiagRisesAfterReleaseCount,
+                            dj.authDiagSecondRiseSeenAfterRelease,
+                            dj.pendingSecondPress,
+                            dj.authDiagTryApplyAttempts,
+                            dj.inputState.name(),
+                            dj.inputCooldownFramesRemaining);
                 }
                 if (applyTrace == ApplyResult.APPLIED) {
                     if (latchDiagAir) {
@@ -1317,6 +1511,7 @@ final class DoubleJumpTicking {
             // jumpHeldLastQueue: QueueScanner sets it from SMS walk when present; when the queue has no SMS it mirrors
             // applied movementStates.jumping so stale SMS does not block second-jump edge/tap heuristics.
             } finally {
+                JumpEdgeTick.endAfterInputTick(ref);
                 PlayerInputJumpAuthorityMixin.finishAfterInputTick(input);
                 setRawJumpProbeSource(null);
             }

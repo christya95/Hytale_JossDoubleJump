@@ -87,6 +87,7 @@ public class DoubleJump extends JavaPlugin {
         this.getCommandRegistry().registerCommand((AbstractCommand) new AmoreTraceCommands.DumpNdjson());
         this.getCommandRegistry().registerCommand((AbstractCommand) new AmoreTraceCommands.DumpPerfetto());
         this.getCommandRegistry().registerCommand((AbstractCommand) new AmoreTraceCommands.DumpCbor());
+        this.getCommandRegistry().registerCommand((AbstractCommand) new EdgeChannelCommands.EdgeTest());
         if (DoubleJumpConfig.ActivationMode.from(DoubleJumpConfig.get()).usesAbilityInjection()) {
             GlobalAbilityUnlocker.inject();
         }
